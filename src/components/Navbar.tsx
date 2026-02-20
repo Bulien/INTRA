@@ -10,6 +10,10 @@ const navLinks = [
   { href: "/ranking", label: "Ranking" },
 ];
 
+function isAdmin(session: { user?: { role?: string } | null } | null): boolean {
+  return (session?.user as { role?: string } | undefined)?.role === "admin";
+}
+
 export function Navbar() {
   const pathname = usePathname();
   const { data: session, status } = useSession();
@@ -27,6 +31,18 @@ export function Navbar() {
           </Link>
 
           <div className="flex items-center gap-1">
+            {isAdmin(session) && (
+              <Link
+                href="/admin"
+                className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                  pathname?.startsWith("/admin")
+                    ? "bg-cyan-500/20 text-cyan-300"
+                    : "text-neutral-400 hover:text-pink-200 hover:bg-pink-500/10"
+                }`}
+              >
+                Admin
+              </Link>
+            )}
             {navLinks.map((link) => {
               const isActive =
                 link.href === "/"
@@ -46,17 +62,26 @@ export function Navbar() {
                 </Link>
               );
             })}
-            <div className="ml-2 pl-2 border-l border-white/10">
+            <div className="ml-2 pl-2 border-l border-white/10 flex items-center gap-2">
               {status === "loading" ? (
                 <span className="px-3 py-2 text-sm text-neutral-500">…</span>
               ) : session ? (
-                <button
-                  type="button"
-                  onClick={() => signOut({ callbackUrl: "/" })}
-                  className="px-3 py-2 rounded-md text-sm font-medium text-neutral-400 hover:text-pink-200 hover:bg-pink-500/10 transition-colors"
-                >
-                  Log out
-                </button>
+                <>
+                  <Link
+                    href="/profile"
+                    className="px-2.5 py-1 rounded-md text-sm font-medium bg-cyan-500/15 text-cyan-200 border border-cyan-500/30 hover:bg-cyan-500/25 hover:border-cyan-500/50 transition-colors"
+                    title={session.user?.email ?? undefined}
+                  >
+                    {session.user?.name ?? session.user?.email ?? "User"}
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => signOut({ callbackUrl: "/" })}
+                    className="px-3 py-2 rounded-md text-sm font-medium text-neutral-400 hover:text-pink-200 hover:bg-pink-500/10 transition-colors"
+                  >
+                    Log out
+                  </button>
+                </>
               ) : (
                 <Link
                   href="/login"

@@ -37,16 +37,20 @@ model Session {
 
 model User {
   id            String    @id @default(cuid())
+  username      String?   @unique
   name          String?
   email         String?   @unique
   emailVerified DateTime?
   image         String?
   password      String?
   role          String    @default("user") // "admin" | "user"
+  bannedUntil   DateTime?
+  createdAt     DateTime  @default(now())
 
   accounts Account[]
   sessions Session[]
   gameResults GameResult[]
+  teamBuilderGamesCreated TeamBuilderGame[]
 }
 
 model VerificationToken {
@@ -55,6 +59,14 @@ model VerificationToken {
   expires    DateTime
 
   @@unique([identifier, token])
+}
+
+model RegistrationAttempt {
+  id        String   @id @default(cuid())
+  ip        String
+  createdAt DateTime @default(now())
+
+  @@index([ip, createdAt])
 }
 
 model GameResult {
@@ -93,4 +105,21 @@ model SeasonMeta {
   validatedIndices    String   @default("[]") @db.Text
   validatedPlayerIds  String   @default("[]") @db.Text
   @@id([gameType, season])
+}
+
+model TeamBuilderGame {
+  id          String   @id @default(cuid())
+  gameType    String
+  season      Int
+  createdById String
+  teamA       String   @db.Text
+  teamB       String   @db.Text
+  status      String   @default("pending")
+  winner      String?
+  createdAt   DateTime @default(now())
+
+  createdBy User @relation(fields: [createdById], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@index([createdAt])
 }

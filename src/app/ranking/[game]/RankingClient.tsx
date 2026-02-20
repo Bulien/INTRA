@@ -681,12 +681,6 @@ export function RankingClient({
           </Table>
         </TableContainer>
       )}
-
-      {!loading && rows.length === 0 && (
-        <Typography color="text.secondary" sx={{ mt: 3 }}>
-          Click &quot;Add player&quot; to create your first column.
-        </Typography>
-      )}
     </Box>
   );
 }

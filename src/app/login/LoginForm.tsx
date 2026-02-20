@@ -5,30 +5,30 @@ import { useState } from "react";
 import Link from "next/link";
 import { Card, CardContent, Button, Typography, TextField, Divider } from "@mui/material";
 import GoogleIcon from "@mui/icons-material/Google";
-import { sanitizeEmail, sanitizePassword } from "@/lib/sanitizeInput";
+import { sanitizeDisplayName, sanitizePassword } from "@/lib/sanitizeInput";
 
 export function LoginForm() {
   const [loading, setLoading] = useState(false);
-  const [email, setEmail] = useState("");
+  const [login, setLogin] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
 
   const handleCredentialsSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
-    if (!email.trim() || !password) {
-      setError("Email and password required");
+    if (!login.trim() || !password) {
+      setError("Login and password required");
       return;
     }
     setLoading(true);
     try {
-      const res = await signIn("credentials", {
-        email: email.trim().toLowerCase(),
+      const res = (await signIn("credentials", {
+        username: login.trim().toLowerCase(),
         password,
         callbackUrl: "/",
         redirect: true,
-      });
-      if (res?.error) setError("Invalid email or password");
+      })) as { error?: string } | undefined;
+      if (res?.error) setError("Invalid login or password");
     } catch {
       setError("Something went wrong");
     } finally {
@@ -52,13 +52,13 @@ export function LoginForm() {
         <form onSubmit={handleCredentialsSignIn} className="space-y-4">
           <TextField
             fullWidth
-            label="Email"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(sanitizeEmail(e.target.value))}
+            label="Login"
+            type="text"
+            value={login}
+            onChange={(e) => setLogin(sanitizeDisplayName(e.target.value))}
             variant="outlined"
             size="medium"
-            autoComplete="email"
+            autoComplete="username"
             sx={{ "& .MuiOutlinedInput-root": { bgcolor: "rgba(0,0,0,0.2)" } }}
           />
           <TextField

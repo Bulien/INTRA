@@ -5,21 +5,25 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, Button, Typography, TextField } from "@mui/material";
-import { sanitizeDisplayName, sanitizeEmail, sanitizePassword } from "@/lib/sanitizeInput";
+import { sanitizeDisplayName, sanitizePassword } from "@/lib/sanitizeInput";
 
 export function RegisterForm() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
+  const [login, setLogin] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
-    if (!email.trim() || !password) {
-      setError("Email and password required");
+    if (!login.trim() || !password) {
+      setError("Login and password required");
+      return;
+    }
+    if (password !== confirmPassword) {
+      setError("Password and confirmation do not match");
       return;
     }
     if (password.length < 6) {
@@ -32,9 +36,9 @@ export function RegisterForm() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          email: email.trim().toLowerCase(),
+          login: login.trim().toLowerCase(),
           password,
-          name: name.trim() || undefined,
+          confirmPassword,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -44,7 +48,7 @@ export function RegisterForm() {
         return;
       }
       const signInRes = await signIn("credentials", {
-        email: email.trim().toLowerCase(),
+        username: login.trim().toLowerCase(),
         password,
         callbackUrl: "/",
         redirect: false,
@@ -68,23 +72,13 @@ export function RegisterForm() {
         <form onSubmit={handleRegister} className="space-y-4">
           <TextField
             fullWidth
-            label="Name (optional)"
-            value={name}
-            onChange={(e) => setName(sanitizeDisplayName(e.target.value))}
+            label="Login"
+            type="text"
+            value={login}
+            onChange={(e) => setLogin(sanitizeDisplayName(e.target.value))}
             variant="outlined"
             size="medium"
-            autoComplete="name"
-            sx={{ "& .MuiOutlinedInput-root": { bgcolor: "rgba(0,0,0,0.2)" } }}
-          />
-          <TextField
-            fullWidth
-            label="Email"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(sanitizeEmail(e.target.value))}
-            variant="outlined"
-            size="medium"
-            autoComplete="email"
+            autoComplete="username"
             required
             sx={{ "& .MuiOutlinedInput-root": { bgcolor: "rgba(0,0,0,0.2)" } }}
           />
@@ -94,6 +88,18 @@ export function RegisterForm() {
             type="password"
             value={password}
             onChange={(e) => setPassword(sanitizePassword(e.target.value))}
+            variant="outlined"
+            size="medium"
+            autoComplete="new-password"
+            required
+            sx={{ "& .MuiOutlinedInput-root": { bgcolor: "rgba(0,0,0,0.2)" } }}
+          />
+          <TextField
+            fullWidth
+            label="Confirm password"
+            type="password"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(sanitizePassword(e.target.value))}
             variant="outlined"
             size="medium"
             autoComplete="new-password"

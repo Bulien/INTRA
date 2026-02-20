@@ -1,52 +1,54 @@
-# Team Balancer
+# INTRA — Team Balancer & Rankings
 
-A modern web app for creating balanced teams and tracking gaming rankings. Built with Next.js, React, Tailwind CSS, Material UI, PostgreSQL, and Auth.js.
+A web app for building balanced teams and tracking game rankings. Create even teams (Yin/Yang), share games with others, and submit results to update per-game, per-season leaderboards.
+
+![INTRA](https://img.shields.io/badge/Next.js-15-black?style=flat-square&logo=next.js)  
+Next.js 15 · React 18 · TypeScript · Prisma · PostgreSQL · NextAuth · MUI · Tailwind
+
+---
 
 ## Features
 
-- **Team Builder** — Add players with ratings 1–10; get two balanced teams with equal sizes and minimal score difference
-- **Ranking** — Log game results per player; view global rankings by average score. Sub-tabs: LoL, Overwatch, StarCraft, Battlerite
-- **Auth** — Google sign-in (Auth.js). Ranking pages require login
+- **Team Builder** — Add players with 1–10 ratings; get two balanced teams. Start a shared game so everyone in the match can see it and submit the result (when eligible).
+- **Rankings** — Per-game tables (LoL, Overwatch, Survival Chaos, Battlerite) with seasons, validation, and CSV export.
+- **Auth** — Register (username/password) or sign in with Google. First user is admin. Optional profile with stats and favorite teammates.
+- **Admin console** — User management (list, delete, ban), KPIs, and activity graphs (admin-only).
+- **Safeguards** — Registration rate limit (one account per IP per 10 min). Result submission requires ≥10 registered users and all players in the game to have an account. “Game finished” to close games that can’t be submitted.
 
-## Setup (Local)
+---
+
+## Quick start
 
 ### Prerequisites
 
 - Node.js 18+
 - PostgreSQL
 
-### 1. Install dependencies
+### 1. Install
 
 ```bash
+git clone https://github.com/YOUR_USERNAME/team-balancer.git
 cd team-balancer
 npm install
 ```
 
-### 2. Environment variables
+### 2. Environment
 
-Copy `.env.example` to `.env.local`:
-
-```bash
-cp .env.example .env.local
-```
-
-Edit `.env.local`:
+Copy `.env.example` to `.env` (or `.env.local`) and set:
 
 ```env
 DATABASE_URL="postgresql://user:password@localhost:5432/team_balancer?schema=public"
-AUTH_SECRET="generate-with-openssl-rand-base64-32"
-AUTH_GOOGLE_ID="your-google-client-id"
-AUTH_GOOGLE_SECRET="your-google-client-secret"
+AUTH_SECRET="your-secret"   # e.g. openssl rand -base64 32
+# Optional Google login:
+AUTH_GOOGLE_ID=""
+AUTH_GOOGLE_SECRET=""
 ```
-
-- **AUTH_SECRET**: Run `openssl rand -base64 32`
-- **Google OAuth**: Create credentials at [Google Cloud Console](https://console.cloud.google.com/apis/credentials)
 
 ### 3. Database
 
 ```bash
-npx prisma generate
-npx prisma db push
+npm run db:generate
+npm run db:push
 ```
 
 ### 4. Run
@@ -55,23 +57,42 @@ npx prisma db push
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+Open [http://localhost:3000](http://localhost:3000). Register the first user (they become admin).
 
-## Pages
+---
+
+## Main routes
 
 | Route | Description |
 |-------|-------------|
-| `/` | Team Builder (no auth) |
-| `/login` | Sign in |
+| `/` | Home — game summaries and links to rankings |
+| `/team-builder` | Build teams, start shared games, submit or finish games |
 | `/ranking` | Redirects to `/ranking/lol` |
-| `/ranking/lol` | LoL rankings |
-| `/ranking/ow` | Overwatch rankings |
-| `/ranking/sc` | StarCraft rankings |
-| `/ranking/battlerite` | Battlerite rankings |
+| `/ranking/lol`, `/ow`, `/sc`, `/battlerite` | Per-game ranking tables |
+| `/profile` | Your stats (login required) |
+| `/admin` | Admin console (admin only) |
+| `/login`, `/register` | Auth |
 
-## Tech Stack
+---
 
-- **Frontend**: Next.js 15, React 19, Tailwind CSS, Material UI
-- **Backend**: Next.js API routes
-- **Database**: PostgreSQL + Prisma
-- **Auth**: Auth.js (NextAuth v5) + Google
+## Scripts
+
+| Command | Description |
+|---------|-------------|
+| `npm run dev` | Start dev server |
+| `npm run build` | Production build |
+| `npm run db:generate` | Regenerate Prisma client |
+| `npm run db:push` | Apply schema to DB |
+| `npm run set-admin` | Grant admin: `node scripts/set-admin.mjs <username>` |
+
+---
+
+## Documentation
+
+For a full guide to the app, database, API, and project structure, see **[DOCUMENTATION.md](./DOCUMENTATION.md)**.
+
+---
+
+## License
+
+Use and modify as you like.

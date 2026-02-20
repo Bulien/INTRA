@@ -15,7 +15,7 @@ export default async function RegisterPage() {
           <img src="/yin-yang.png" alt="" aria-hidden className="h-8 w-8 block bg-transparent mix-blend-multiply" /> INTRA
         </h1>
         <p className="text-neutral-400">
-          Create an account to get your name suggested in Team Builder
+          Create an account to register your results in the rankings
         </p>
       </div>
 

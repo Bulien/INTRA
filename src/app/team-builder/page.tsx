@@ -150,6 +150,60 @@ function saveTeamBuilderPlayers(players: Player[]) {
   }
 }
 
+type SharedGame = {
+  id: string;
+  gameType: string;
+  season: number;
+  teamA: Player[];
+  teamB: Player[];
+  status: string;
+  winner: string | null;
+  createdAt: string;
+  createdById?: string;
+  createdByName: string;
+};
+
+async function fetchActiveGames(): Promise<SharedGame[]> {
+  const res = await fetch("/api/team-builder/games?status=pending", { cache: "no-store" });
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.games ?? [];
+}
+
+async function createSharedGame(
+  gameType: string,
+  season: number,
+  teamA: Player[],
+  teamB: Player[]
+): Promise<SharedGame | null> {
+  const res = await fetch("/api/team-builder/games", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ gameType, season, teamA, teamB }),
+  });
+  if (!res.ok) return null;
+  return res.json();
+}
+
+async function submitSharedGameResult(
+  gameId: string,
+  winner: "yin" | "yang"
+): Promise<{ ok: boolean; error?: string }> {
+  const res = await fetch(`/api/team-builder/games/${gameId}/result`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ winner }),
+  });
+  const data = res.ok ? undefined : await res.json().catch(() => ({}));
+  return { ok: res.ok, error: (data as { error?: string })?.error ?? (res.ok ? undefined : "Submit failed") };
+}
+
+async function finishSharedGame(gameId: string): Promise<{ ok: boolean; error?: string }> {
+  const res = await fetch(`/api/team-builder/games/${gameId}/finish`, { method: "POST" });
+  const data = res.ok ? undefined : await res.json().catch(() => ({}));
+  return { ok: res.ok, error: (data as { error?: string })?.error ?? (res.ok ? undefined : "Failed to finish game") };
+}
+
 export default function TeamBuilderPage() {
   const [players, setPlayers] = useState<Player[]>([]);
   const [newName, setNewName] = useState("");
@@ -160,10 +214,36 @@ export default function TeamBuilderPage() {
   const { data: session } = useSession();
   const [refillResult, setRefillResult] = useState<ReturnType<typeof balanceTeams> | null>(null);
   const result = refillResult ?? balanceTeams(players);
+  const [activeSharedGames, setActiveSharedGames] = useState<SharedGame[]>([]);
+  const [creatingGame, setCreatingGame] = useState(false);
+  const [finishingGameId, setFinishingGameId] = useState<string | null>(null);
+  const [canValidate, setCanValidate] = useState(false);
+  const [validateUserCount, setValidateUserCount] = useState(0);
 
   useEffect(() => {
     setPlayers(loadTeamBuilderPlayers());
   }, []);
+
+  const fetchCanValidate = useCallback(() => {
+    fetch("/api/team-builder/can-validate", { cache: "no-store" })
+      .then((res) => res.ok ? res.json() : { canValidate: false, userCount: 0 })
+      .then((data) => {
+        setCanValidate(Boolean(data.canValidate));
+        setValidateUserCount(Number(data.userCount) || 0);
+      })
+      .catch(() => { setCanValidate(false); setValidateUserCount(0); });
+  }, []);
+
+  useEffect(() => {
+    fetchCanValidate();
+  }, [fetchCanValidate]);
+
+  // Refetch when shared games are shown so we never show buttons with stale count
+  useEffect(() => {
+    if (activeSharedGames.length > 0) {
+      fetchCanValidate();
+    }
+  }, [activeSharedGames.length, fetchCanValidate]);
 
   useEffect(() => {
     setRefillResult(null);
@@ -193,6 +273,23 @@ export default function TeamBuilderPage() {
       .then((res) => res.json())
       .then((data) => setRegisteredUserNames(data.names ?? []))
       .catch(() => setRegisteredUserNames([]));
+  }, [session?.user]);
+
+  useEffect(() => {
+    if (!session?.user) {
+      setActiveSharedGames([]);
+      return;
+    }
+    fetchActiveGames().then(setActiveSharedGames);
+  }, [session?.user]);
+
+  // Poll for new shared games so receiving users see updates without refreshing
+  useEffect(() => {
+    if (!session?.user) return;
+    const interval = setInterval(() => {
+      fetchActiveGames().then(setActiveSharedGames);
+    }, 5000);
+    return () => clearInterval(interval);
   }, [session?.user]);
 
   const updatePlayer = useCallback((id: string, updates: Partial<Player>) => {
@@ -244,37 +341,130 @@ export default function TeamBuilderPage() {
     setRefillResult(balanceTeams(players, { shuffleSameRating: true }));
   }, [players]);
 
+  const handleStartGame = useCallback(async () => {
+    if (!session?.user || result.teamA.length === 0 || result.teamB.length === 0) return;
+    setCreatingGame(true);
+    try {
+      const game = await createSharedGame(
+        selectedGame,
+        maxSeason,
+        result.teamA,
+        result.teamB
+      );
+      if (game) {
+        setActiveSharedGames((prev) => [game, ...prev]);
+      }
+    } finally {
+      setCreatingGame(false);
+    }
+  }, [session?.user, result.teamA, result.teamB, selectedGame, maxSeason]);
+
+  const [submitSharedError, setSubmitSharedError] = useState<string | null>(null);
+
+  const handleSubmitSharedResult = useCallback(
+    async (gameId: string, winner: "yin" | "yang") => {
+      setSubmitSharedError(null);
+      const { ok, error } = await submitSharedGameResult(gameId, winner);
+      if (ok) {
+        setActiveSharedGames((prev) => prev.filter((g) => g.id !== gameId));
+        window.dispatchEvent(new CustomEvent("rankingUpdated", { detail: { gameType: selectedGame } }));
+        closeConfirmWin();
+      } else {
+        setSubmitSharedError(error ?? "Submit failed");
+      }
+    },
+    [selectedGame]
+  );
+
+  const handleFinishGame = useCallback(async (gameId: string) => {
+    setFinishingGameId(gameId);
+    const { ok, error } = await finishSharedGame(gameId);
+    setFinishingGameId(null);
+    if (ok) {
+      setActiveSharedGames((prev) => prev.filter((g) => g.id !== gameId));
+    } else {
+      setResultBlockedMessage(error ?? "Failed to finish game");
+      setTimeout(() => setResultBlockedMessage(null), 5000);
+    }
+  }, []);
+
   const handleTeamWin = useCallback(async (team: "yin" | "yang") => {
     const winningTeam = team === "yin" ? result.teamA : result.teamB;
     const losingTeam = team === "yin" ? result.teamB : result.teamA;
     const winningNames = winningTeam.map((p) => p.name);
     const losingNames = losingTeam.map((p) => p.name);
     await recordWin(selectedGame, maxSeason, winningNames, losingNames);
-
-    const message = `${team === "yin" ? "Yin" : "Yang"} win recorded for ${GAMES.find((g) => g.value === selectedGame)?.label || selectedGame}!\nWinners: ${winningNames.join(", ")}\nLosers: ${losingNames.join(", ")}`;
-    alert(message);
   }, [result, selectedGame, maxSeason]);
 
   const isOdd = players.length % 2 !== 0;
 
   const [confirmWinOpen, setConfirmWinOpen] = useState(false);
   const [confirmWinTeam, setConfirmWinTeam] = useState<"yin" | "yang" | null>(null);
+  const [confirmSharedGameId, setConfirmSharedGameId] = useState<string | null>(null);
+  const userName = session?.user?.name?.trim() ?? session?.user?.email?.trim() ?? "";
+  const userInYin = userName
+    ? result.teamA.some((p) => p.name.trim().toLowerCase() === userName.toLowerCase())
+    : false;
+  const userInYang = userName
+    ? result.teamB.some((p) => p.name.trim().toLowerCase() === userName.toLowerCase())
+    : false;
+  const canSubmitYinWon = userInYang;
+  const canSubmitYangWon = userInYin;
 
   const openConfirmWin = (team: "yin" | "yang") => {
+    if (!session?.user) return;
+    if (team === "yin" && !canSubmitYinWon) return;
+    if (team === "yang" && !canSubmitYangWon) return;
+    setConfirmSharedGameId(null);
     setConfirmWinTeam(team);
     setConfirmWinOpen(true);
   };
 
+  const [resultBlockedMessage, setResultBlockedMessage] = useState<string | null>(null);
+  const openConfirmSharedResult = (gameId: string, winner: "yin" | "yang") => {
+    if (!canValidate) {
+      setResultBlockedMessage(`Result submission requires at least 10 registered players (${validateUserCount} currently).`);
+      setTimeout(() => setResultBlockedMessage(null), 5000);
+      return;
+    }
+    const game = activeSharedGames.find((g) => g.id === gameId);
+    if (game) {
+      const regSet = new Set((registeredUserNames ?? []).map((n) => String(n).trim().toLowerCase()));
+      const allReg = [...game.teamA, ...game.teamB].every(
+        (p) => (p.name ?? "").trim() === "" || regSet.has((p.name ?? "").trim().toLowerCase())
+      );
+      if (!allReg) {
+        setResultBlockedMessage("All players in the game must have an account to submit results.");
+        setTimeout(() => setResultBlockedMessage(null), 5000);
+        return;
+      }
+    }
+    setSubmitSharedError(null);
+    setConfirmSharedGameId(gameId);
+    setConfirmWinTeam(winner);
+    setConfirmWinOpen(true);
+  };
+
+  const baseCanRecordWin = Boolean(session?.user);
+  const canRecordWinYin = baseCanRecordWin && canSubmitYinWon;
+  const canRecordWinYang = baseCanRecordWin && canSubmitYangWon;
+
   const closeConfirmWin = () => {
     setConfirmWinOpen(false);
     setConfirmWinTeam(null);
+    setConfirmSharedGameId(null);
+    setSubmitSharedError(null);
   };
 
   const onConfirmWin = useCallback(async () => {
     if (!confirmWinTeam) return;
-    await handleTeamWin(confirmWinTeam);
-    closeConfirmWin();
-  }, [confirmWinTeam, handleTeamWin]);
+    if (confirmSharedGameId) {
+      await handleSubmitSharedResult(confirmSharedGameId, confirmWinTeam);
+    } else {
+      await handleTeamWin(confirmWinTeam);
+      closeConfirmWin();
+    }
+  }, [confirmWinTeam, confirmSharedGameId, handleTeamWin, handleSubmitSharedResult]);
 
   const [chronoSeconds, setChronoSeconds] = useState(0);
   const [chronoRunning, setChronoRunning] = useState(true);
@@ -285,7 +475,264 @@ export default function TeamBuilderPage() {
   }, [chronoRunning]);
   const chronoDisplay = `${Math.floor(chronoSeconds / 60)}:${String(chronoSeconds % 60).padStart(2, "0")}`;
 
+  const isCreatorOfAnyActiveGame = activeSharedGames.some(
+    (g) => g.createdById && session?.user?.id && g.createdById === session.user.id
+  );
+  const hasActiveSharedGame = Boolean(session?.user && activeSharedGames.length > 0);
+  const isAdmin = (session?.user as { role?: string } | undefined)?.role === "admin";
+  const [hideSharedGamesOnlyView, setHideSharedGamesOnlyView] = useState(false);
+  useEffect(() => {
+    if (activeSharedGames.length === 0) setHideSharedGamesOnlyView(false);
+  }, [activeSharedGames.length]);
+  const showOnlySharedGames = Boolean(
+    session?.user && activeSharedGames.length > 0 && !isCreatorOfAnyActiveGame && !hideSharedGamesOnlyView
+  );
+
+  const bannedUntilIso = (session?.user as { bannedUntil?: string | null } | undefined)?.bannedUntil;
+  const isBanned =
+    Boolean(session?.user && bannedUntilIso) && new Date(bannedUntilIso!) > new Date();
+
+  function formatTimeLeft(until: string): string {
+    const end = new Date(until).getTime();
+    const now = Date.now();
+    const ms = Math.max(0, end - now);
+    const days = Math.floor(ms / (24 * 60 * 60 * 1000));
+    const hours = Math.floor((ms % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000));
+    const minutes = Math.floor((ms % (60 * 60 * 1000)) / (60 * 1000));
+    const parts: string[] = [];
+    if (days > 0) parts.push(`${days} day${days !== 1 ? "s" : ""}`);
+    if (hours > 0) parts.push(`${hours} hour${hours !== 1 ? "s" : ""}`);
+    if (minutes > 0 || parts.length === 0) parts.push(`${minutes} minute${minutes !== 1 ? "s" : ""}`);
+    return parts.join(", ");
+  }
+
+  if (isBanned && bannedUntilIso) {
+    return (
+      <Box
+        sx={{
+          minHeight: "calc(100vh - 8rem)",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          py: 4,
+          px: 2,
+        }}
+      >
+        <Card
+          sx={{
+            maxWidth: 420,
+            border: "2px solid",
+            borderColor: "error.main",
+            bgcolor: "background.paper",
+            boxShadow: "0 8px 32px rgba(0,0,0,0.3)",
+          }}
+        >
+          <CardContent sx={{ py: 3, px: 3, textAlign: "center" }}>
+            <Typography variant="h5" sx={{ color: "error.main", fontWeight: 700, mb: 1 }}>
+              Account suspended
+            </Typography>
+            <Typography variant="body1" color="text.secondary" sx={{ mb: 2 }}>
+              Your account is temporarily banned from using the Team Builder.
+            </Typography>
+            <Typography variant="body2" sx={{ color: "text.primary", fontWeight: 600 }}>
+              Time left: {formatTimeLeft(bannedUntilIso)}
+            </Typography>
+            <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
+              Ban expires: {new Date(bannedUntilIso).toLocaleString()}
+            </Typography>
+          </CardContent>
+        </Card>
+      </Box>
+    );
+  }
+
   return (
+    <>
+      {showOnlySharedGames ? (
+      <Box
+        sx={{
+          minHeight: "calc(100vh - 8rem)",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          py: 4,
+        }}
+      >
+        <Typography variant="h4" sx={{ mb: 3, color: "text.primary", textAlign: "center" }}>
+          Team Builder
+        </Typography>
+        <Box sx={{ width: "100%", maxWidth: 640, mx: "auto" }}>
+          {activeSharedGames.map((game) => {
+            const un = (session?.user?.name ?? session?.user?.email ?? "").trim().toLowerCase();
+            const inYin = game.teamA.some((p) => (p.name ?? "").trim().toLowerCase() === un);
+            const inYang = game.teamB.some((p) => (p.name ?? "").trim().toLowerCase() === un);
+            const isCreator = Boolean(game.createdById && session?.user?.id && game.createdById === session.user.id);
+            const canYin = inYang || (isCreator && isAdmin);
+            const canYang = inYin || (isCreator && isAdmin);
+            const registeredNorm = new Set((registeredUserNames ?? []).map((n) => String(n).trim().toLowerCase()));
+            const allPlayersRegistered = [...game.teamA, ...game.teamB].every(
+              (p) => (p.name ?? "").trim() === "" || registeredNorm.has((p.name ?? "").trim().toLowerCase())
+            );
+            const canSubmitThisGame = canValidate && allPlayersRegistered;
+            const gameLabel = GAMES.find((g) => g.value === game.gameType)?.label ?? game.gameType;
+            const teamAScore = game.teamA.reduce((s, p) => s + (p.rating ?? 0), 0);
+            const teamBScore = game.teamB.reduce((s, p) => s + (p.rating ?? 0), 0);
+            return (
+              <Card
+                key={game.id}
+                sx={{
+                  border: "2px solid",
+                  borderColor: "rgba(103,232,249,0.3)",
+                  bgcolor: "rgba(26,26,26,0.95)",
+                  boxShadow: "0 8px 32px rgba(0,0,0,0.4)",
+                }}
+              >
+                <CardContent sx={{ py: 3, px: 3 }}>
+                  <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 2 }}>
+                    {gameLabel} · Season {game.season} · by {game.createdByName}
+                  </Typography>
+                  <div className="grid grid-cols-2 gap-4 mb-3">
+                    <Box sx={{ p: 2, borderRadius: 1, bgcolor: "rgba(103,232,249,0.08)", border: "1px solid rgba(103,232,249,0.25)" }}>
+                      <Typography
+                        component="span"
+                        sx={{
+                          display: "inline-block",
+                          px: 1.5,
+                          py: 0.5,
+                          mb: 1.5,
+                          fontSize: "0.7rem",
+                          fontWeight: 800,
+                          letterSpacing: "0.2em",
+                          color: "#0f0f0f",
+                          bgcolor: "#67e8f9",
+                          borderRadius: 1,
+                          textTransform: "uppercase",
+                        }}
+                      >
+                        Team Yin
+                      </Typography>
+                      <Typography variant="subtitle1" sx={{ color: "#67e8f9", fontWeight: 700, mb: 1 }}>— {teamAScore} pts</Typography>
+                      <ul className="list-none p-0 m-0 space-y-1">
+                        {game.teamA.map((p) => (
+                          <li key={p.id} className="flex justify-between text-sm">
+                            <span className="text-neutral-200">{p.name}</span>
+                            <span className="font-semibold text-cyan-200">{p.rating ?? "—"}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </Box>
+                    <Box sx={{ p: 2, borderRadius: 1, bgcolor: "rgba(249,168,212,0.08)", border: "1px solid rgba(249,168,212,0.25)" }}>
+                      <Typography
+                        component="span"
+                        sx={{
+                          display: "inline-block",
+                          px: 1.5,
+                          py: 0.5,
+                          mb: 1.5,
+                          fontSize: "0.7rem",
+                          fontWeight: 800,
+                          letterSpacing: "0.2em",
+                          color: "#0f0f0f",
+                          bgcolor: "#f9a8d4",
+                          borderRadius: 1,
+                          textTransform: "uppercase",
+                        }}
+                      >
+                        Team Yang
+                      </Typography>
+                      <Typography variant="subtitle1" sx={{ color: "#f9a8d4", fontWeight: 700, mb: 1 }}>— {teamBScore} pts</Typography>
+                      <ul className="list-none p-0 m-0 space-y-1">
+                        {game.teamB.map((p) => (
+                          <li key={p.id} className="flex justify-between text-sm">
+                            <span className="text-neutral-200">{p.name}</span>
+                            <span className="font-semibold text-pink-200">{p.rating ?? "—"}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </Box>
+                  </div>
+                  <div className="flex gap-2">
+                    {canSubmitThisGame ? (
+                      <>
+                        <Button
+                          fullWidth
+                          variant="contained"
+                          size="large"
+                          disabled={!canYin}
+                          onClick={() => openConfirmSharedResult(game.id, "yin")}
+                          sx={{
+                            py: 1.5,
+                            bgcolor: "#67e8f9",
+                            color: "#0f0f0f",
+                            fontWeight: 700,
+                            "&:hover": { bgcolor: "#22d3ee" },
+                          }}
+                        >
+                          Yin Won
+                        </Button>
+                        <Button
+                          fullWidth
+                          variant="contained"
+                          size="large"
+                          disabled={!canYang}
+                          onClick={() => openConfirmSharedResult(game.id, "yang")}
+                          sx={{
+                            py: 1.5,
+                            bgcolor: "#f9a8d4",
+                            color: "#0f0f0f",
+                            fontWeight: 700,
+                            "&:hover": { bgcolor: "#f472b6" },
+                          }}
+                        >
+                          Yang Won
+                        </Button>
+                      </>
+                    ) : (
+                      <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5, width: "100%" }}>
+                        <Typography variant="body2" color="text.secondary" sx={{ textAlign: "center" }}>
+                          {!canValidate
+                            ? `Result submission requires at least 10 registered players (${validateUserCount} currently).`
+                            : "All players in the game must have an account to submit results."}
+                        </Typography>
+                        <Button
+                          variant="outlined"
+                          size="medium"
+                          disabled={finishingGameId === game.id}
+                          onClick={() => handleFinishGame(game.id)}
+                          sx={{
+                            borderColor: "rgba(255,255,255,0.4)",
+                            color: "text.secondary",
+                            "&:hover": { borderColor: "rgba(255,255,255,0.6)", bgcolor: "rgba(255,255,255,0.06)" },
+                          }}
+                        >
+                          {finishingGameId === game.id ? "Finishing…" : "Game finished"}
+                        </Button>
+                      </Box>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+          <Box sx={{ textAlign: "center", mt: 2 }}>
+            <Button
+              variant="outlined"
+              size="small"
+              onClick={() => setHideSharedGamesOnlyView(true)}
+              sx={{
+                borderColor: "rgba(255,255,255,0.3)",
+                color: "text.secondary",
+                "&:hover": { borderColor: "rgba(255,255,255,0.5)", bgcolor: "rgba(255,255,255,0.06)" },
+              }}
+            >
+              Continue to team builder
+            </Button>
+          </Box>
+        </Box>
+      </Box>
+      ) : (
     <Box>
       <div className="flex items-center justify-between gap-4 mb-3">
         <div
@@ -302,18 +749,35 @@ export default function TeamBuilderPage() {
         </div>
         <div className="flex-1" />
       </div>
+      {resultBlockedMessage && (
+        <Box sx={{ mb: 2, p: 1.5, bgcolor: "error.dark", color: "error.contrastText", borderRadius: 1 }}>
+          <Typography variant="body2">{resultBlockedMessage}</Typography>
+        </Box>
+      )}
       <div className="flex items-start gap-4 mb-3">
         <div className="flex-1">
           <Typography variant="h4" sx={{ mb: 0.5, color: "text.primary" }}>
             Team Builder
           </Typography>
         </div>
-        <div className="flex items-center gap-3">
-          <Typography variant="body2" color="text.secondary">
+        <div className="flex items-center gap-4">
+          <Typography
+            variant="subtitle1"
+            sx={{
+              fontWeight: 600,
+              color: "text.primary",
+              letterSpacing: "0.02em",
+              px: 1.5,
+              py: 0.5,
+              borderRadius: 1,
+              bgcolor: "rgba(103,232,249,0.12)",
+              border: "1px solid rgba(103,232,249,0.25)",
+            }}
+          >
             Season {maxSeason} (current)
           </Typography>
-          <Typography variant="body2" color="text.secondary">
-            Game:
+          <Typography variant="subtitle1" sx={{ fontWeight: 600, color: "text.primary" }}>
+            Game
           </Typography>
           <Autocomplete
             value={GAMES.find((g) => g.value === selectedGame) || GAMES[0]}
@@ -428,7 +892,7 @@ export default function TeamBuilderPage() {
       </Card>
 
       {players.length >= 2 && (
-        <Box sx={{ mb: 2 }}>
+        <Box sx={{ mb: 2, display: "flex", gap: 2, flexWrap: "wrap" }}>
           <Button
             variant="outlined"
             startIcon={<ShuffleIcon />}
@@ -441,6 +905,201 @@ export default function TeamBuilderPage() {
           >
             Refill teams
           </Button>
+          {session?.user && (
+            <Button
+              variant="contained"
+              disabled={creatingGame || hasActiveSharedGame}
+              onClick={handleStartGame}
+              sx={{
+                bgcolor: hasActiveSharedGame ? "rgba(255,255,255,0.2)" : "rgba(249,168,212,0.9)",
+                color: "#0f0f0f",
+                "&:hover": { bgcolor: hasActiveSharedGame ? undefined : "#f9a8d4" },
+              }}
+            >
+              {creatingGame
+                ? "Creating…"
+                : hasActiveSharedGame
+                  ? "Game has started"
+                  : "Start game (share with players)"}
+            </Button>
+          )}
+        </Box>
+      )}
+
+      {session?.user && activeSharedGames.length > 0 && (
+        <Box
+          sx={{
+            width: "100%",
+            mb: 4,
+            py: 4,
+            px: 0,
+            bgcolor: "rgba(0,0,0,0.25)",
+            borderRadius: 2,
+            border: "1px solid rgba(255,255,255,0.06)",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+          }}
+        >
+          <Typography variant="h5" sx={{ mb: 3, color: "text.primary", textAlign: "center", fontWeight: 600 }}>
+            Games waiting for result
+          </Typography>
+          <Box sx={{ width: "100%" }}>
+            <div className="grid grid-cols-1 gap-4" style={{ width: "100%" }}>
+              {activeSharedGames.map((game) => {
+                const un = (session?.user?.name ?? session?.user?.email ?? "").trim().toLowerCase();
+                const inYin = game.teamA.some((p) => (p.name ?? "").trim().toLowerCase() === un);
+                const inYang = game.teamB.some((p) => (p.name ?? "").trim().toLowerCase() === un);
+                const isCreator = Boolean(game.createdById && session?.user?.id && game.createdById === session.user.id);
+                const canYin = inYang || (isCreator && isAdmin);
+                const canYang = inYin || (isCreator && isAdmin);
+                const registeredNorm2 = new Set((registeredUserNames ?? []).map((n) => String(n).trim().toLowerCase()));
+                const allPlayersRegistered2 = [...game.teamA, ...game.teamB].every(
+                  (p) => (p.name ?? "").trim() === "" || registeredNorm2.has((p.name ?? "").trim().toLowerCase())
+                );
+                const canSubmitThisGame2 = canValidate && allPlayersRegistered2;
+                const gameLabel = GAMES.find((g) => g.value === game.gameType)?.label ?? game.gameType;
+                const teamAScore = game.teamA.reduce((s, p) => s + (p.rating ?? 0), 0);
+                const teamBScore = game.teamB.reduce((s, p) => s + (p.rating ?? 0), 0);
+                return (
+                  <Card
+                    key={game.id}
+                    sx={{
+                      border: "2px solid",
+                      borderColor: "rgba(255,255,255,0.15)",
+                      bgcolor: "rgba(26,26,26,0.8)",
+                      boxShadow: "0 4px 20px rgba(0,0,0,0.3)",
+                    }}
+                  >
+                    <CardContent sx={{ py: 3, px: 3 }}>
+                      <Typography variant="body2" color="text.secondary" display="block" sx={{ mb: 2 }}>
+                        {gameLabel} · Season {game.season} · by {game.createdByName}
+                      </Typography>
+                      <div className="grid grid-cols-2 gap-4 mb-4">
+                        <Box sx={{ p: 2.5, borderRadius: 1, bgcolor: "rgba(103,232,249,0.1)", border: "1px solid rgba(103,232,249,0.3)" }}>
+                          <Typography
+                            component="span"
+                            sx={{
+                              display: "inline-block",
+                              px: 1.5,
+                              py: 0.5,
+                              mb: 1.5,
+                              fontSize: "0.7rem",
+                              fontWeight: 800,
+                              letterSpacing: "0.2em",
+                              color: "#0f0f0f",
+                              bgcolor: "#67e8f9",
+                              borderRadius: 1,
+                              textTransform: "uppercase",
+                            }}
+                          >
+                            Team Yin
+                          </Typography>
+                          <Typography variant="subtitle1" sx={{ color: "#67e8f9", fontWeight: 700, mb: 1 }}>— {teamAScore} pts</Typography>
+                          <ul className="list-none p-0 m-0 space-y-1 text-neutral-300">
+                            {game.teamA.map((p) => (
+                              <li key={p.id} className="flex justify-between text-base">
+                                <span>{p.name}</span>
+                                <span className="font-semibold text-cyan-200">{p.rating ?? "—"}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </Box>
+                        <Box sx={{ p: 2.5, borderRadius: 1, bgcolor: "rgba(249,168,212,0.1)", border: "1px solid rgba(249,168,212,0.3)" }}>
+                          <Typography
+                            component="span"
+                            sx={{
+                              display: "inline-block",
+                              px: 1.5,
+                              py: 0.5,
+                              mb: 1.5,
+                              fontSize: "0.7rem",
+                              fontWeight: 800,
+                              letterSpacing: "0.2em",
+                              color: "#0f0f0f",
+                              bgcolor: "#f9a8d4",
+                              borderRadius: 1,
+                              textTransform: "uppercase",
+                            }}
+                          >
+                            Team Yang
+                          </Typography>
+                          <Typography variant="subtitle1" sx={{ color: "#f9a8d4", fontWeight: 700, mb: 1 }}>— {teamBScore} pts</Typography>
+                          <ul className="list-none p-0 m-0 space-y-1 text-neutral-300">
+                            {game.teamB.map((p) => (
+                              <li key={p.id} className="flex justify-between text-base">
+                                <span>{p.name}</span>
+                                <span className="font-semibold text-pink-200">{p.rating ?? "—"}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </Box>
+                      </div>
+                      <div className="flex gap-2">
+                        {canSubmitThisGame2 ? (
+                          <>
+                            <Button
+                              size="medium"
+                              variant="contained"
+                              disabled={!canYin}
+                              onClick={() => openConfirmSharedResult(game.id, "yin")}
+                              sx={{
+                                flex: 1,
+                                py: 1.5,
+                                bgcolor: "#67e8f9",
+                                color: "#0f0f0f",
+                                fontWeight: 700,
+                                "&:hover": { bgcolor: "#22d3ee" },
+                              }}
+                            >
+                              Yin Won
+                            </Button>
+                            <Button
+                              size="medium"
+                              variant="contained"
+                              disabled={!canYang}
+                              onClick={() => openConfirmSharedResult(game.id, "yang")}
+                              sx={{
+                                flex: 1,
+                                py: 1.5,
+                                bgcolor: "#f9a8d4",
+                                color: "#0f0f0f",
+                                fontWeight: 700,
+                                "&:hover": { bgcolor: "#f472b6" },
+                              }}
+                            >
+                              Yang Won
+                            </Button>
+                          </>
+                        ) : (
+                          <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5, flex: 1 }}>
+                            <Typography variant="body2" color="text.secondary" sx={{ textAlign: "center" }}>
+                              {!canValidate
+                                ? `Result submission requires at least 10 registered players (${validateUserCount} currently).`
+                                : "All players in the game must have an account to submit results."}
+                            </Typography>
+                            <Button
+                              variant="outlined"
+                              size="medium"
+                              disabled={finishingGameId === game.id}
+                              onClick={() => handleFinishGame(game.id)}
+                              sx={{
+                                borderColor: "rgba(255,255,255,0.4)",
+                                color: "text.secondary",
+                                "&:hover": { borderColor: "rgba(255,255,255,0.6)", bgcolor: "rgba(255,255,255,0.06)" },
+                              }}
+                            >
+                              {finishingGameId === game.id ? "Finishing…" : "Game finished"}
+                            </Button>
+                          </Box>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          </Box>
         </Box>
       )}
 
@@ -451,27 +1110,6 @@ export default function TeamBuilderPage() {
               <Typography variant="subtitle1" fontWeight={600} sx={{ color: "#67e8f9" }}>
                 Yin — {result.teamAScore}
               </Typography>
-              <Button
-                size="medium"
-                variant="contained"
-                startIcon={<EmojiEventsIcon />}
-                onClick={() => openConfirmWin("yin")}
-                sx={{
-                  bgcolor: "#67e8f9",
-                  color: "#0f0f0f",
-                  border: "2px solid rgba(255,255,255,0.5)",
-                  boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
-                  fontWeight: 700,
-                  px: 2,
-                  "&:hover": {
-                    bgcolor: "#22d3ee",
-                    boxShadow: "0 4px 12px rgba(103,232,249,0.4)",
-                    borderColor: "rgba(255,255,255,0.8)",
-                  },
-                }}
-              >
-                Yin Won
-              </Button>
             </div>
             <Divider sx={{ my: 1.5, borderColor: "rgba(103,232,249,0.2)" }} />
             <ul className="space-y-0.5">
@@ -490,27 +1128,6 @@ export default function TeamBuilderPage() {
               <Typography variant="subtitle1" fontWeight={600} sx={{ color: "#f9a8d4" }}>
                 Yang — {result.teamBScore}
               </Typography>
-              <Button
-                size="medium"
-                variant="contained"
-                startIcon={<EmojiEventsIcon />}
-                onClick={() => openConfirmWin("yang")}
-                sx={{
-                  bgcolor: "#f9a8d4",
-                  color: "#0f0f0f",
-                  border: "2px solid rgba(255,255,255,0.5)",
-                  boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
-                  fontWeight: 700,
-                  px: 2,
-                  "&:hover": {
-                    bgcolor: "#f472b6",
-                    boxShadow: "0 4px 12px rgba(249,168,212,0.4)",
-                    borderColor: "rgba(255,255,255,0.8)",
-                  },
-                }}
-              >
-                Yang Won
-              </Button>
             </div>
             <Divider sx={{ my: 1.5, borderColor: "rgba(249,168,212,0.2)" }} />
             <ul className="space-y-0.5">
@@ -524,6 +1141,8 @@ export default function TeamBuilderPage() {
           </CardContent>
         </Card>
       </div>
+    </Box>
+      )}
 
       <Dialog
         open={confirmWinOpen}
@@ -547,9 +1166,15 @@ export default function TeamBuilderPage() {
         </DialogTitle>
         <DialogContent>
           <Typography color="text.secondary">
-            Record <strong>{confirmWinTeam === "yin" ? "Yin" : "Yang"}</strong> as winner for{" "}
-            {GAMES.find((g) => g.value === selectedGame)?.label ?? selectedGame}?
+            {confirmSharedGameId
+              ? `Confirm: ${confirmWinTeam === "yin" ? "Yin" : "Yang"} won?`
+              : `Record ${confirmWinTeam === "yin" ? "Yin" : "Yang"} as winner for ${GAMES.find((g) => g.value === selectedGame)?.label ?? selectedGame}?`}
           </Typography>
+          {submitSharedError && (
+            <Typography color="error" sx={{ mt: 2, fontSize: "0.875rem" }}>
+              {submitSharedError}
+            </Typography>
+          )}
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
           <Button onClick={closeConfirmWin} color="inherit">
@@ -568,6 +1193,6 @@ export default function TeamBuilderPage() {
           </Button>
         </DialogActions>
       </Dialog>
-    </Box>
+    </>
   );
 }

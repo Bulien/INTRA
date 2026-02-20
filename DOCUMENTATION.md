@@ -1,18 +1,36 @@
-# INTRA — Team Balancer & Rankings
+# INTRA — Documentation
 
-Documentation for the **INTRA** application: balanced team building and per-game rankings with seasons.
+Technical documentation for **INTRA**: balanced team building, shared games, and per-game rankings with seasons. Use this to understand the codebase and modify it.
+
+---
+
+## Table of contents
+
+1. [Overview](#1-overview)
+2. [Getting started](#2-getting-started)
+3. [Application guide](#3-application-guide)
+4. [Database (Prisma)](#4-database-prisma)
+5. [API reference](#5-api-reference)
+6. [Auth, roles & bans](#6-auth-roles--bans)
+7. [Project structure](#7-project-structure)
+8. [Scripts](#8-scripts)
+9. [Deployment & GitHub](#9-deployment--github)
 
 ---
 
 ## 1. Overview
 
-**INTRA** lets you:
+**INTRA** provides:
 
-- **Build balanced teams** — Add players with a 1–10 rating; the app splits them into two teams (Yin / Yang) with minimal rating imbalance. You can record which team won to update rankings.
-- **Track rankings per game** — Per-game, per-season tables where each column is a player and each row is a game. Scores are win/loss (0/1) for LoL, Overwatch, Battlerite, or 1–4 for Survival Chaos. Averages and win rates are computed.
-- **Use auth optionally** — Sign in with email/password or Google. The first registered user becomes **admin**; admins can edit rankings, end seasons, and delete the current season. The app works without an account for viewing and for the Team Builder (ranking updates still work).
+| Feature | Description |
+|--------|-------------|
+| **Team Builder** | Add players with 1–10 rating; algorithm splits into Yin/Yang with minimal imbalance. Create shared games and submit results to update rankings. |
+| **Rankings** | Per-game, per-season tables (LoL, Overwatch, Survival Chaos, Battlerite). Rows = games, columns = players; scores are win/loss or placement. |
+| **Auth** | Login with username/password or Google. Register (rate-limited by IP). First user is admin; admins manage users, rankings, and see the admin console. |
+| **Profile** | Per-user stats: games played, win rate, favorite teammates (when logged in). |
+| **Admin console** | User management (list, delete, ban), KPIs, and activity graphs (admin-only). |
 
-**Tech stack:** Next.js 15 (App Router), React 18, TypeScript, Prisma, PostgreSQL, NextAuth v5 (beta), MUI (Material UI), Tailwind CSS.
+**Tech stack:** Next.js 15 (App Router), React 18, TypeScript, Prisma, PostgreSQL, NextAuth v5 (beta), MUI, Tailwind CSS, Recharts.
 
 ---
 
@@ -20,45 +38,37 @@ Documentation for the **INTRA** application: balanced team building and per-game
 
 ### Prerequisites
 
-- **Node.js** (v18+)
-- **PostgreSQL** (running locally or remote)
-- **pnpm** or **npm**
+- **Node.js** 18+
+- **PostgreSQL** (local or remote)
+- **npm** (or pnpm)
 
 ### Install
 
 ```bash
 npm install
-# or
-pnpm install
 ```
 
 ### Environment
 
-Copy `.env.example` to `.env.local` and set:
+Copy `.env.example` to `.env` (or `.env.local`) and set:
 
 | Variable | Description |
 |----------|-------------|
-| `DATABASE_URL` | PostgreSQL connection string, e.g. `postgresql://USER:PASSWORD@localhost:5432/team_balancer?schema=public` |
-| `AUTH_SECRET` | Random secret for NextAuth (e.g. `openssl rand -base64 32`) |
-| `AUTH_GOOGLE_ID` | Google OAuth client ID (optional; leave empty to disable Google login) |
+| `DATABASE_URL` | PostgreSQL URL, e.g. `postgresql://USER:PASSWORD@localhost:5432/team_balancer?schema=public` |
+| `AUTH_SECRET` | Secret for NextAuth (e.g. `openssl rand -base64 32`) |
+| `AUTH_GOOGLE_ID` | Google OAuth client ID (optional; omit to disable Google login) |
 | `AUTH_GOOGLE_SECRET` | Google OAuth client secret (optional) |
 
 ### Database
-
-Generate the Prisma client and push the schema (creates/updates tables):
 
 ```bash
 npm run db:generate
 npm run db:push
 ```
 
-Optional: open Prisma Studio to inspect/edit data:
+Optional: inspect data with `npm run db:studio`.
 
-```bash
-npm run db:studio
-```
-
-### Run the app
+### Run
 
 ```bash
 npm run dev
@@ -68,202 +78,271 @@ Open [http://localhost:3000](http://localhost:3000).
 
 ---
 
-## 3. How to use the app
+## 3. Application guide
 
 ### 3.1 Home (`/`)
 
-- Shows a **summary** of all four games (LoL, Overwatch, Survival Chaos, Battlerite): current season and top 10 players by average (and win rate where applicable).
-- **Survival Chaos** is “lower is better”; others are “higher is better.”
-- Click a card or “Full ranking” to go to that game’s ranking page.
+- Summary of all games: current season and top 10 players.
+- Survival Chaos: lower is better; others: higher is better.
+- Links to each game’s full ranking.
 
 ### 3.2 Team Builder (`/team-builder`)
 
-1. **Select game and season** — Use the dropdowns (e.g. LoL, Season 2).
-2. **Add players** — Type a name (suggestions come from existing ranking players and, if logged in, registered user names). Click “Add player.” Players are stored in **localStorage** so your list persists.
-3. **Set ratings** — Each player has a 1–10 slider. The algorithm splits players into **Yin** and **Yang** so total rating is as even as possible (one team may have one extra if odd count).
-4. **Record result** — After a game, click “Yin Won” or “Yang Won,” confirm in the dialog. The app adds a new game column to the ranking for that game/season: winners get 1, losers 0 (for LoL/OW/Battlerite). The ranking view and home summary update (including via the `rankingUpdated` event).
-
-There is also a **timer** (“RESPECTE MON TEMPS”) for session length.
+- **Game & season** — Select game (LoL, Overwatch, Battlerite) and use current season.
+- **Players** — Add names; suggestions from ranking players and registered users. List is stored in **localStorage**.
+- **Ratings** — 1–10 per player; teams are balanced by total rating (Yin vs Yang).
+- **Shared games** — “Start game” creates a **pending** shared game. Other players (in the teams) see it under “Games waiting for result.”
+- **Submitting results** — To submit “Yin Won” / “Yang Won”:
+  - The app must have **at least 10 registered users**.
+  - **All players in the game** must have an account (name/username matches a user).
+- If result submission is not allowed, a **“Game finished”** button appears: it marks the game as finished (no ranking update) and removes it from the list so a new game can be created.
+- **Banned users** — See a suspension message with time left; cannot use Team Builder until the ban expires.
 
 ### 3.3 Ranking (`/ranking`, `/ranking/[game]`)
 
-- **Navigation** — Default ranking route redirects to `/ranking/lol`. Use the left sidebar to switch between LoL, Overwatch, Survival Chaos, Battlerite.
-- **Season** — Use the “Season” dropdown to view a past or the current season.
-- **Table** — Rows = games (1, 2, 3, …), columns = players. First data row is **total** (player averages). Score rules:
-  - **LoL, Overwatch, Battlerite:** 0 = loss, 1 = win.
-  - **Survival Chaos (sc):** 1–4 (e.g. placement).
-- **Admin-only actions** (when logged in as admin):
-  - **Add player** — New column.
-  - **Add game** — New row.
-  - **Validate row** — Lock a game row (✓); validated rows are read-only until “unvalidated” (edit icon).
-  - **Validate player** — Lock player name (✓); then you can still edit name via edit icon.
-  - **End season** — Increment season (e.g. Season 2 → 3); current season becomes read-only in the dropdown.
-  - **Reset** — Clear all players and data for the current season (irreversible).
-  - **Delete current season** — Remove the latest season and its data; max season goes back by one (admin only, irreversible).
-- **Export CSV** — Download current view (game index, player names, totals, per-game scores) as CSV.
+- Default route redirects to `/ranking/lol`. Sidebar: LoL, Overwatch, Survival Chaos, Battlerite.
+- **Season** dropdown for current or past seasons.
+- **Table:** rows = games, columns = players; first data row = totals (averages).
+- **Score rules:** LoL/OW/Battlerite = 0 (loss) / 1 (win); Survival Chaos = 1–4 (placement).
+- **Admin-only:** add player/game, validate row/player, end season, reset, delete current season.
+- **Export CSV** for the current view.
 
-**Validation:** In the current season, admins can validate game rows and player names. Validated state is stored in `SeasonMeta` and used to show edit vs read-only in the UI.
+### 3.4 Profile (`/profile`)
+
+- Requires login. Shows games played, win rate, and favorite teammates per game (from ranking + team builder results).
+
+### 3.5 Admin (`/admin`)
+
+- **Visible only to admins** (link in navbar + layout guard).
+- **User management:** list users, delete (except self), ban for 1h / 1d / 7d / 30d or unban.
+- **KPIs:** total users, team games, ranking results, banned count; breakdowns for last 7d/30d.
+- **Graphs:** users over time, team builder games by day, ranking results by day.
+
+### 3.6 Auth pages
+
+- **Login** (`/login`) — Username/password or Google.
+- **Register** (`/register`) — Username + password (min 6 chars). One account per IP per 10 minutes (rate limit). First user becomes admin.
 
 ---
 
-## 4. Database (Prisma / PostgreSQL)
+## 4. Database (Prisma)
 
 ### 4.1 Schema overview
 
 | Model | Purpose |
 |-------|---------|
-| **User** | Auth users (email, optional password, name, image, role). |
-| **Account** | OAuth accounts (e.g. Google) linked to User. |
-| **Session** | NextAuth DB sessions (adapter). |
+| **User** | Auth: id, username, name, email, password?, role, bannedUntil?, createdAt. |
+| **Account** | OAuth (e.g. Google) linked to User. |
+| **Session** | NextAuth DB sessions. |
 | **VerificationToken** | NextAuth verification tokens. |
-| **GameResult** | Legacy/unused in current UI: per-user game scores (e.g. 0–100). |
-| **RankingPlayer** | One row per (player name, game, season); `scores` is a JSON array of numbers (one per game). |
-| **GameSeason** | Per-game current season: `gameType` (e.g. `lol`), `maxSeason` (integer). |
-| **SeasonMeta** | Per (game, season): `validatedIndices` (JSON array of game row indices), `validatedPlayerIds` (JSON array of player IDs). |
+| **RegistrationAttempt** | Rate limit: ip, createdAt (one registration per IP per 10 min). |
+| **GameResult** | Legacy per-user scores; not used by main ranking UI. |
+| **RankingPlayer** | One row per (name, gameType, season); `scores` = JSON array of numbers. |
+| **GameSeason** | gameType → maxSeason (current season number). |
+| **SeasonMeta** | Per (gameType, season): validatedIndices, validatedPlayerIds (JSON). |
+| **TeamBuilderGame** | Shared game: gameType, season, teamA/teamB (JSON), status, winner?, createdById. |
 
-### 4.2 Tables in detail
+### 4.2 Key fields
 
 **User**
 
-- `id` (cuid), `name`, `email` (unique), `emailVerified`, `image`, `password` (nullable), `role` (`"admin"` \| `"user"`).
-- First user created via register API gets `role: "admin"`.
+- `role`: `"admin"` \| `"user"`.
+- `bannedUntil`: if set and in the future, user cannot log in and sees ban message on Team Builder.
+- `createdAt`: used for admin stats and “users over time.”
 
-**Account** (NextAuth)
+**TeamBuilderGame**
 
-- `userId`, `provider`, `providerAccountId`, tokens, etc. Unique on `(provider, providerAccountId)`.
+- `status`: `"pending"` (waiting for result), `"result_submitted"` (result sent to ranking), `"finished"` (ended without recording), `"cancelled"`.
+- Only `pending` games are shown in “Games waiting for result.”
 
-**Session** (NextAuth)
+**RegistrationAttempt**
 
-- `sessionToken`, `userId`, `expires`.
-
-**RankingPlayer**
-
-- `id` (cuid), `name`, `gameType`, `season`, `scores` (JSON text, e.g. `"[0,1,null,1]"`), `updatedAt`.
-- Unique on `(name, gameType, season)`.
-
-**GameSeason**
-
-- `gameType` (PK), `maxSeason` (default 1). Tracks the latest season number per game.
-
-**SeasonMeta**
-
-- Composite PK `(gameType, season)`. `validatedIndices`: JSON array of game row indices that are “validated”; `validatedPlayerIds`: JSON array of player IDs that are “validated.”
-
-**GameResult** (optional / legacy)
-
-- `userId`, `gameType`, `score` (float), `createdAt`. Used by `/api/ranking` GET/POST for an alternative ranking by user; not used by the main ranking UI which uses `RankingPlayer` + `SeasonMeta`.
+- One row per successful registration; used to block another registration from the same IP within 10 minutes.
 
 ### 4.3 Valid game types
 
-Used in APIs and UI: `lol`, `ow`, `sc`, `battlerite`.
+`lol`, `ow`, `sc`, `battlerite` (used in APIs and UI).
 
-### 4.4 Useful commands
+### 4.4 Commands
 
 ```bash
 npm run db:generate   # Regenerate Prisma client after schema change
-npm run db:push       # Apply schema to DB (no migrations)
+npm run db:push       # Apply schema to DB (no migration files)
 npm run db:studio     # Open Prisma Studio
 ```
 
 ---
 
-## 5. API (summary)
+## 5. API reference
+
+### Auth
 
 | Method | Route | Auth | Description |
 |--------|--------|------|-------------|
-| GET/POST | `/api/auth/[...nextauth]` | — | NextAuth handlers (login, callback, etc.). |
-| POST | `/api/auth/register` | No | Register (email, password, optional name). |
-| GET | `/api/users/names` | Session | List of user names (for Team Builder suggestions). |
-| GET | `/api/ranking/[game]` | No | Get ranking for `game`; query `?season=N`. Returns players, maxSeason, validatedIndices, validatedPlayerIds. |
-| PUT | `/api/ranking/[game]` | No | Upsert players and optional validation for a season (body: season, players, validatedGameIndices, validatedPlayerIds). |
-| POST | `/api/ranking/[game]/end-season` | No | Increment max season for game. |
-| POST | `/api/ranking/[game]/delete-current-season` | Admin | Delete current season data and decrement max season. |
-| GET/POST | `/api/ranking` | Yes | Legacy: list/post GameResult by game type (not used by main ranking UI). |
+| * | `/api/auth/[...nextauth]` | — | NextAuth (login, callback, session). |
+| POST | `/api/auth/register` | No | Register: body `{ login, password, confirmPassword }`. Rate-limited by IP (10 min). |
+
+### Users
+
+| Method | Route | Auth | Description |
+|--------|--------|------|-------------|
+| GET | `/api/users/names` | Session | List of names/usernames (for Team Builder autocomplete). |
+
+### Profile
+
+| Method | Route | Auth | Description |
+|--------|--------|------|-------------|
+| GET | `/api/profile/stats` | Session | Games played, win rate, teammates per game. |
+
+### Ranking
+
+| Method | Route | Auth | Description |
+|--------|--------|------|-------------|
+| GET | `/api/ranking/[game]` | No | Ranking for game; `?season=N`. |
+| PUT | `/api/ranking/[game]` | No | Upsert players and validation (body: season, players, validatedGameIndices, validatedPlayerIds). |
+| POST | `/api/ranking/[game]/end-season` | No | Increment max season. |
+| POST | `/api/ranking/[game]/delete-current-season` | Admin | Delete current season and decrement max. |
+| GET/POST | `/api/ranking` | Yes | Legacy GameResult API (not used by main ranking UI). |
+
+### Team Builder
+
+| Method | Route | Auth | Description |
+|--------|--------|------|-------------|
+| GET | `/api/team-builder/games` | Session | List games; `?status=pending` (default). Returns only games where the user is in teamA or teamB. |
+| POST | `/api/team-builder/games` | Session | Create shared game: body `{ gameType, season, teamA, teamB }`. |
+| POST | `/api/team-builder/games/[id]/result` | Session | Submit result: body `{ winner: "yin" \| "yang" }`. Requires ≥10 users and all players registered. |
+| POST | `/api/team-builder/games/[id]/finish` | Session | Mark game as finished (no ranking update). Creator or a player in the game. |
+| GET | `/api/team-builder/can-validate` | No | `{ canValidate, userCount, minRequired: 10 }` for showing submit buttons. |
+| POST | `/api/team-builder/games/cancel-all` | Session | Set all pending games to cancelled. |
+
+### Admin
+
+| Method | Route | Auth | Description |
+|--------|--------|------|-------------|
+| GET | `/api/admin/users` | Admin | List all users (id, username, name, email, role, bannedUntil, createdAt). |
+| DELETE | `/api/admin/users/[id]` | Admin | Delete user (cannot delete self). |
+| PATCH | `/api/admin/users/[id]` | Admin | Update user; body `{ bannedUntil: string \| null }` (ISO date or null to unban). |
+| GET | `/api/admin/stats` | Admin | KPIs and time-series for charts (users/games/results over time). |
 
 ---
 
-## 6. Auth & roles
+## 6. Auth, roles & bans
 
-- **Login:** `/login` — Email/password or Google (if configured).
-- **Register:** `/register` — Email + password (min 6 chars); first user becomes **admin**.
-- **Session:** JWT, 30 days. Role stored in token and synced from DB when needed.
-- **Admin:** Required only for “Delete current season.” Other ranking write operations (PUT ranking, end season) are not restricted by role in the API; the UI shows admin-only buttons based on `session?.user?.role === "admin"`.
+- **Login:** `/login` — Username/password (credentials) or Google. Banned users (bannedUntil > now) are rejected at login.
+- **Register:** `/register` — Username + password (min 6 chars). One registration per IP per 10 minutes. First user gets `role: "admin"`.
+- **Session:** JWT, 30 days. Role and `bannedUntil` are read from DB in the session callback so the client can show ban state.
+- **Admin:** Required for admin console, delete current season, and (in UI) ranking admin actions. Check: `session?.user?.role === "admin"`.
+- **Ban:** Set via admin console (PATCH `/api/admin/users/[id]`). Login is blocked; Team Builder shows “Account suspended” with time left.
 
 ---
 
-## 7. Project structure (main paths)
+## 7. Project structure
 
 ```
 src/
   app/
-    page.tsx                 # Home (game cards)
-    layout.tsx                # Root layout (Navbar, ThemeProvider, SessionProvider)
-    login/, register/        # Auth pages
-    team-builder/page.tsx    # Team Builder
+    layout.tsx                    # Root layout (fonts, Navbar, ThemeProvider, SessionProvider)
+    page.tsx                      # Home (game summary cards)
+    globals.css
+    login/
+      page.tsx, LoginForm.tsx
+    register/
+      page.tsx, RegisterForm.tsx
+    profile/
+      page.tsx                    # User stats (games, win rate, teammates)
+    admin/
+      layout.tsx                  # Redirects non-admins to /
+      page.tsx                    # Admin console (users, KPIs, graphs)
+    team-builder/
+      page.tsx                    # Team Builder + shared games UI
     ranking/
-      page.tsx               # Redirect to /ranking/lol
-      layout.tsx             # Ranking layout + RankingGameNav
-      [game]/page.tsx        # Ranking page (server); passes game + isAdmin
-      [game]/RankingClient.tsx  # Full ranking table UI
-      RankingGameNav.tsx     # Sidebar links (LoL, OW, SC, Battlerite)
+      page.tsx                    # Redirect to /ranking/lol
+      layout.tsx                  # Ranking layout + sidebar
+      RankingGameNav.tsx          # LoL, OW, SC, Battlerite links
+      [game]/
+        page.tsx                  # Server: passes game, isAdmin
+        RankingClient.tsx         # Ranking table, admin actions, CSV export
     api/
-      auth/[...nextauth]/route.ts
-      auth/register/route.ts
+      auth/
+        [...nextauth]/route.ts
+        register/route.ts         # Register + IP rate limit
       users/names/route.ts
-      ranking/route.ts       # Legacy GameResult API
-      ranking/[game]/route.ts         # GET/PUT ranking
-      ranking/[game]/end-season/route.ts
-      ranking/[game]/delete-current-season/route.ts
+      profile/stats/route.ts
+      ranking/
+        route.ts                  # Legacy GameResult
+        [game]/
+          route.ts                # GET/PUT ranking
+          end-season/route.ts
+          delete-current-season/route.ts
+      team-builder/
+        can-validate/route.ts      # GET canValidate, userCount
+        games/
+          route.ts                # GET (list) / POST (create)
+          cancel-all/route.ts
+          [id]/
+            result/route.ts       # POST submit winner
+            finish/route.ts       # POST mark finished
+      admin/
+        users/
+          route.ts                # GET list
+          [id]/route.ts           # DELETE, PATCH (ban)
+        stats/route.ts            # GET KPIs + chart data
   components/
-    Navbar.tsx, MainWrapper.tsx, ThemeProvider.tsx, SessionProvider.tsx
+    Navbar.tsx                    # Links + Admin (if admin) + Profile + Login/Logout
+    MainWrapper.tsx
+    ThemeProvider.tsx
+    SessionProvider.tsx
   lib/
-    auth.ts        # NextAuth config
-    prisma.ts      # Prisma client singleton
-    teamBalancer.ts  # balanceTeams(players) → { teamA, teamB, scores, imbalance }
+    auth.ts                       # NextAuth config, session callbacks, ban check at login
+    prisma.ts                     # Prisma client singleton
+    teamBalancer.ts               # balanceTeams(players) → { teamA, teamB, ... }
+    sanitizeInput.ts              # sanitizeDisplayName, sanitizePassword
 prisma/
-  schema.prisma   # DB schema
+  schema.prisma
+scripts/
+  set-admin.mjs                   # node scripts/set-admin.mjs <username>
+  seed-test-users.mjs             # Create test5..test14, password azerty
+  cancel-pending-games.mjs       # Used by npm run games:cancel-all
 ```
 
 ---
 
-## 8. Pushing to GitHub
+## 8. Scripts
 
-### Will `.env.local` be a problem?
+| Command | Description |
+|---------|-------------|
+| `npm run dev` | Start dev server. |
+| `npm run build` | Production build. |
+| `npm run start` | Start production server. |
+| `npm run lint` | Run ESLint. |
+| `npm run db:generate` | Regenerate Prisma client. |
+| `npm run db:push` | Apply schema to DB. |
+| `npm run db:studio` | Open Prisma Studio. |
+| `npm run games:cancel-all` | Set all pending team-builder games to cancelled. |
+| `npm run set-admin` | Grant admin role: `node scripts/set-admin.mjs <username>`. |
 
-**No.** `.env.local` is in `.gitignore` (as `.env*.local`), so Git will **never** commit or push it. Your secrets stay only on your machine.
+**One-off scripts (run with `node`):**
 
-- **Do commit** `.env.example` (it has no secrets; it just lists variable names and placeholders).
-- **Never** commit `.env`, `.env.local`, or any file with real keys or passwords.
-
-### Steps to upload to GitHub
-
-1. **Create a new repository on GitHub**
-   - Go to [github.com/new](https://github.com/new).
-   - Name it e.g. `team-balancer`, leave it empty (no README, no .gitignore).
-
-2. **Initialize Git and push from your project**
-   - In the project folder (`team-balancer`), run:
-
-   ```bash
-   git init
-   git add .
-   git status
-   ```
-   - Check that **`.env.local` does not appear** under "Changes to be committed". If it does, do not commit; fix `.gitignore` first.
-   - Then:
-
-   ```bash
-   git commit -m "Initial commit: INTRA team balancer"
-   git branch -M main
-   git remote add origin https://github.com/YOUR_USERNAME/team-balancer.git
-   git push -u origin main
-   ```
-   - Replace `YOUR_USERNAME` and `team-balancer` with your GitHub username and repo name.
-
-3. **Deploying later (Vercel, Railway, etc.)**
-   - Do **not** put `.env.local` in the repo.
-   - On the host, set the same variables (e.g. `DATABASE_URL`, `AUTH_SECRET`, `AUTH_GOOGLE_*`) in the project’s environment / settings. Use `.env.example` as a checklist.
+- `scripts/seed-test-users.mjs` — Creates users test5–test14 with password `azerty` (skips existing).
 
 ---
 
-You can use this doc to onboard, run the app, understand the DB, and extend or change behavior. For code changes or new features, refer to the sections above and the code in `src/` and `prisma/`.
+## 9. Deployment & GitHub
+
+- **Secrets:** `.env` and `.env.local` are in `.gitignore`. Do not commit them. Use `.env.example` as a template; set the same variables in your host’s environment (Vercel, Railway, etc.).
+- **Database:** Run `db:push` or migrations on the host after setting `DATABASE_URL`.
+- **First admin:** After deploy, create a user via `/register` (first user is admin) or create a user in DB and run `set-admin` with your DB URL if you have a way to run scripts against the deployed DB.
+
+**Pushing to GitHub:**
+
+```bash
+git init
+git add .
+git status   # Ensure .env.local is not staged
+git commit -m "Initial commit: INTRA team balancer"
+git branch -M main
+git remote add origin https://github.com/YOUR_USERNAME/YOUR_REPO.git
+git push -u origin main
+```
+
+Use this doc to onboard, run the app, understand the DB and APIs, and extend or change behavior. For implementation details, refer to the code in `src/` and `prisma/schema.prisma`.

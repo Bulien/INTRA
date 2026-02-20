@@ -46,6 +46,11 @@ function winrate(scores: (number | null)[]): number | null {
   return Math.round((wins / total) * 100);
 }
 
+/** Number of games played (wins + losses). */
+function gamesPlayed(scores: (number | null)[]): number {
+  return scores.filter((s) => s === 1 || s === 0).length;
+}
+
 export default function HomePage() {
   const [data, setData] = useState<Record<string, { players: RankingPlayer[]; maxSeason: number }>>({});
   const [loading, setLoading] = useState(true);
@@ -120,7 +125,7 @@ export default function HomePage() {
             const players = d?.players ?? [];
             const lowerIsBetter = g.slug === "sc"; // Survival Chaos: lowest average = best
             const withAvg = players
-              .map((p) => ({ ...p, avg: average(p.scores), wr: winrate(p.scores) }))
+              .map((p) => ({ ...p, avg: average(p.scores), wr: winrate(p.scores), games: gamesPlayed(p.scores) }))
               .filter((p) => p.playerName?.trim())
               .sort((a, b) => (lowerIsBetter ? a.avg - b.avg : b.avg - a.avg))
               .slice(0, 10);
@@ -181,12 +186,12 @@ export default function HomePage() {
                       {withAvg.map((p, i) => (
                         <li
                           key={p.id}
-                          className="flex items-center justify-between py-1.5 px-2 rounded-md"
+                          className="flex items-center justify-between py-1.5 px-2 rounded-md gap-3"
                           style={{
                             backgroundColor: i < 3 ? "rgba(255,255,255,0.03)" : "transparent",
                           }}
                         >
-                          <span className="flex items-center gap-2">
+                          <span className="flex items-center gap-2 min-w-0 flex-1">
                             {i === 0 && <EmojiEventsIcon sx={{ fontSize: 20, color: "#fbbf24" }} />}
                             {i === 1 && <EmojiEventsIcon sx={{ fontSize: 18, color: "#9ca3af" }} />}
                             {i === 2 && <EmojiEventsIcon sx={{ fontSize: 16, color: "#b45309" }} />}
@@ -195,14 +200,32 @@ export default function HomePage() {
                                 {i + 1}
                               </span>
                             )}
-                            <span className="font-medium">{p.playerName || "—"}</span>
+                            <span className="font-medium truncate">{p.playerName || "—"}</span>
                           </span>
-                          <span className="flex items-center gap-3 font-mono font-semibold" style={{ color: "#67e8f9" }}>
-                            <span>{p.avg.toFixed(2)}</span>
-                            <span className="text-neutral-400 font-normal text-xs">
-                              {p.wr !== null ? `${p.wr}%` : "—"}
-                            </span>
-                          </span>
+                          <Typography
+                            component="span"
+                            sx={{
+                              fontFamily: "var(--font-geist-mono), ui-monospace, monospace",
+                              fontSize: "0.8rem",
+                              color: "text.secondary",
+                              flexShrink: 0,
+                            }}
+                          >
+                            {p.games} games
+                          </Typography>
+                          <Typography
+                            component="span"
+                            sx={{
+                              fontFamily: "var(--font-geist-mono), ui-monospace, monospace",
+                              fontSize: "0.875rem",
+                              fontWeight: 600,
+                              letterSpacing: "0.02em",
+                              color: p.wr !== null ? "#a5f3fc" : "text.secondary",
+                              flexShrink: 0,
+                            }}
+                          >
+                            {p.wr !== null ? `${p.wr}%` : "—"}
+                          </Typography>
                         </li>
                       ))}
                     </ul>
