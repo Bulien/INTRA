@@ -1,0 +1,23 @@
+import { auth } from "@/lib/auth";
+import { redirect } from "next/navigation";
+import { LoginForm } from "./LoginForm";
+
+export default async function LoginPage() {
+  const session = await auth();
+  if (session?.user) {
+    redirect("/");
+  }
+
+  return (
+    <div className="max-w-md mx-auto mt-16">
+      <div className="text-center mb-8">
+        <h1 className="text-3xl font-bold bg-gradient-to-r from-cyan-300 to-pink-300 bg-clip-text text-transparent mb-2 flex items-center gap-2"><img src="/yin-yang.png" alt="" aria-hidden className="h-8 w-8 block bg-transparent mix-blend-multiply" /> INTRA</h1>
+        <p className="text-neutral-400">
+          Sign in or register — the app works without an account too
+        </p>
+      </div>
+
+      <LoginForm />
+    </div>
+  );
+}
