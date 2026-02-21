@@ -76,6 +76,17 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "teamA and teamB must be non-empty arrays" }, { status: 400 });
   }
 
+  const userExists = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { id: true },
+  });
+  if (!userExists) {
+    return NextResponse.json(
+      { error: "Your account was not found. Please sign out and sign in again." },
+      { status: 401 }
+    );
+  }
+
   const game = await prisma.teamBuilderGame.create({
     data: {
       gameType,

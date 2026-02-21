@@ -177,14 +177,17 @@ async function createSharedGame(
   season: number,
   teamA: Player[],
   teamB: Player[]
-): Promise<SharedGame | null> {
+): Promise<{ ok: boolean; game?: SharedGame | null; error?: string }> {
   const res = await fetch("/api/team-builder/games", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ gameType, season, teamA, teamB }),
   });
-  if (!res.ok) return null;
-  return res.json();
+  const data = res.ok ? await res.json() : await res.json().catch(() => ({}));
+  if (!res.ok) {
+    return { ok: false, error: (data as { error?: string }).error ?? "Failed to create game" };
+  }
+  return { ok: true, game: data as SharedGame };
 }
 
 async function submitSharedGameResult(
@@ -218,6 +221,7 @@ export default function TeamBuilderPage() {
   const result = refillResult ?? balanceTeams(players);
   const [activeSharedGames, setActiveSharedGames] = useState<SharedGame[]>([]);
   const [creatingGame, setCreatingGame] = useState(false);
+  const [startGameError, setStartGameError] = useState<string | null>(null);
   const [finishingGameId, setFinishingGameId] = useState<string | null>(null);
   const [canValidate, setCanValidate] = useState(false);
   const [validateUserCount, setValidateUserCount] = useState(0);
@@ -345,16 +349,19 @@ export default function TeamBuilderPage() {
 
   const handleStartGame = useCallback(async () => {
     if (!session?.user || result.teamA.length === 0 || result.teamB.length === 0) return;
+    setStartGameError(null);
     setCreatingGame(true);
     try {
-      const game = await createSharedGame(
+      const result_ = await createSharedGame(
         selectedGame,
         maxSeason,
         result.teamA,
         result.teamB
       );
-      if (game) {
-        setActiveSharedGames((prev) => [game, ...prev]);
+      if (result_.ok && result_.game) {
+        setActiveSharedGames((prev) => [result_.game!, ...prev]);
+      } else if (result_.error) {
+        setStartGameError(result_.error);
       }
     } finally {
       setCreatingGame(false);
@@ -921,22 +928,29 @@ export default function TeamBuilderPage() {
             Refill teams
           </Button>
           {session?.user && (
-            <Button
-              variant="contained"
-              disabled={creatingGame || hasActiveSharedGame}
-              onClick={handleStartGame}
-              sx={{
-                bgcolor: hasActiveSharedGame ? "rgba(255,255,255,0.2)" : "rgba(249,168,212,0.9)",
-                color: "#0f0f0f",
-                "&:hover": { bgcolor: hasActiveSharedGame ? undefined : "#f9a8d4" },
-              }}
-            >
-              {creatingGame
-                ? "Creating…"
-                : hasActiveSharedGame
-                  ? "Game has started"
-                  : "Start game (share with players)"}
-            </Button>
+            <>
+              <Button
+                variant="contained"
+                disabled={creatingGame || hasActiveSharedGame}
+                onClick={handleStartGame}
+                sx={{
+                  bgcolor: hasActiveSharedGame ? "rgba(255,255,255,0.2)" : "rgba(249,168,212,0.9)",
+                  color: "#0f0f0f",
+                  "&:hover": { bgcolor: hasActiveSharedGame ? undefined : "#f9a8d4" },
+                }}
+              >
+                {creatingGame
+                  ? "Creating…"
+                  : hasActiveSharedGame
+                    ? "Game has started"
+                    : "Start game (share with players)"}
+              </Button>
+              {startGameError && (
+                <Typography variant="body2" color="error" sx={{ mt: 1 }}>
+                  {startGameError}
+                </Typography>
+              )}
+            </>
           )}
         </Box>
       )}
