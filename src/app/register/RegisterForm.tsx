@@ -19,7 +19,7 @@ export function RegisterForm() {
     e.preventDefault();
     setError("");
     if (!login.trim() || !password) {
-      setError("Login and password required");
+      setError("Pseudo and password required");
       return;
     }
     if (password !== confirmPassword) {
@@ -72,7 +72,7 @@ export function RegisterForm() {
         <form onSubmit={handleRegister} className="space-y-4">
           <TextField
             fullWidth
-            label="Login"
+            label="Pseudo"
             type="text"
             value={login}
             onChange={(e) => setLogin(sanitizeDisplayName(e.target.value))}

@@ -32,24 +32,26 @@ async function fetchRanking(game: string, season: number) {
   };
 }
 
-function average(scores: (number | null)[]): number {
-  const valid = scores.filter((s): s is number => s !== null && !isNaN(s));
-  if (!valid.length) return 0;
-  return valid.reduce((a, b) => a + b, 0) / valid.length;
-}
-
-/** Winrate from ranking: 1 = win, 0 = loss. Returns null if no 0/1 games. */
-function winrate(scores: (number | null)[]): number | null {
+/** Compute stats for ranking preview. For SC: placements 1–4 (games = count, avg = avg place). For others: wins/losses (games, winrate). */
+function playerStats(
+  scores: (number | null)[],
+  gameSlug: string
+): { games: number; avg: number; wr: number | null } {
+  if (gameSlug === "sc") {
+    const placementScores = scores.filter((s): s is number => s !== null && s >= 1 && s <= 4);
+    const games = placementScores.length;
+    const avg =
+      games > 0
+        ? Math.round((placementScores.reduce((a, b) => a + b, 0) / games) * 10) / 10
+        : 999; // no games → sort last
+    return { games, avg, wr: null };
+  }
   const wins = scores.filter((s) => s === 1).length;
   const losses = scores.filter((s) => s === 0).length;
-  const total = wins + losses;
-  if (total === 0) return null;
-  return Math.round((wins / total) * 100);
-}
-
-/** Number of games played (wins + losses). */
-function gamesPlayed(scores: (number | null)[]): number {
-  return scores.filter((s) => s === 1 || s === 0).length;
+  const games = wins + losses;
+  const wr = games > 0 ? Math.round((wins / games) * 100) : null;
+  const avg = games > 0 ? (wins / games) * 100 : 0; // for sort: higher winrate = better
+  return { games, avg, wr };
 }
 
 export default function HomePage() {
@@ -156,10 +158,11 @@ export default function HomePage() {
           {GAMES.map((g) => {
             const d = data[g.slug];
             const players = d?.players ?? [];
-            const lowerIsBetter = g.slug === "sc"; // Survival Chaos: lowest average = best
+            const lowerIsBetter = g.slug === "sc"; // SC: lowest avg placement = best
             const withAvg = players
-              .map((p) => ({ ...p, avg: average(p.scores), wr: winrate(p.scores), games: gamesPlayed(p.scores) }))
+              .map((p) => ({ ...p, ...playerStats(p.scores, g.slug) }))
               .filter((p) => p.playerName?.trim())
+              .filter((p) => p.games > 0) // only players with at least one game in this mode
               .sort((a, b) => (lowerIsBetter ? a.avg - b.avg : b.avg - a.avg))
               .slice(0, 10);
             return (

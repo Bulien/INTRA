@@ -16,7 +16,7 @@ export function LoginForm() {
     e.preventDefault();
     setError("");
     if (!login.trim() || !password) {
-      setError("Login and password required");
+      setError("Pseudo and password required");
       return;
     }
     setLoading(true);
@@ -27,7 +27,7 @@ export function LoginForm() {
         callbackUrl: "/",
         redirect: true,
       })) as { error?: string } | undefined;
-      if (res?.error) setError("Invalid login or password");
+      if (res?.error) setError("Invalid pseudo or password");
     } catch {
       setError("Something went wrong");
     } finally {
@@ -41,7 +41,7 @@ export function LoginForm() {
         <form onSubmit={handleCredentialsSignIn} className="space-y-4">
           <TextField
             fullWidth
-            label="Login"
+            label="Pseudo"
             type="text"
             value={login}
             onChange={(e) => setLogin(sanitizeDisplayName(e.target.value))}
