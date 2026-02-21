@@ -39,16 +39,20 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if (!credentials?.username || !credentials?.password) return null;
         const username = sanitizeDisplayName(String(credentials.username)).trim().toLowerCase();
         const password = sanitizePassword(String(credentials.password));
-        const user = await prisma.user.findUnique({ where: { username }, select: { id: true, email: true, name: true, image: true, password: true, role: true, bannedUntil: true } });
+        const user = await prisma.user.findUnique({
+          where: { username },
+          select: { id: true, email: true, name: true, image: true, password: true, role: true, bannedUntil: true, username: true },
+        });
         if (!user?.password) return null;
         const bannedUntil = (user as { bannedUntil?: Date | null }).bannedUntil;
         if (bannedUntil && new Date(bannedUntil) > new Date()) return null; // banned
         const ok = await bcrypt.compare(password, user.password);
         if (!ok) return null;
+        const name = user.name ?? (user as { username?: string | null }).username ?? undefined;
         return {
           id: user.id,
           email: user.email ?? undefined,
-          name: (user as { name?: string }).name ?? user.username ?? undefined,
+          name,
           image: user.image ?? undefined,
           role: (user as { role?: string }).role ?? "user",
         };
