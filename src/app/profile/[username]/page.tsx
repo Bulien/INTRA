@@ -3,8 +3,9 @@
 import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { Box, Typography, CircularProgress } from "@mui/material";
+import { Box, Typography } from "@mui/material";
 import { ProfileStatsView, type ProfileStats } from "@/components/ProfileStatsView";
+import { ProfileSkeleton } from "@/components/ProfileSkeleton";
 
 async function fetchUserStats(username: string): Promise<ProfileStats | null> {
   const res = await fetch(`/api/users/${encodeURIComponent(username)}/stats`, { cache: "no-store" });
@@ -33,11 +34,7 @@ export default function PublicProfilePage() {
   }, [username]);
 
   if (loading) {
-    return (
-      <Box sx={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "40vh" }}>
-        <CircularProgress size={40} sx={{ color: "#67e8f9" }} />
-      </Box>
-    );
+    return <ProfileSkeleton />;
   }
 
   if (notFound || !stats) {

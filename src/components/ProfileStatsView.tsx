@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import {
   Box,
   Card,
@@ -17,6 +18,7 @@ export type GameStats = {
   winrate: number | null;
   label: string;
   averageRating?: number | null;
+  averagePlacement?: number | null;
 };
 
 export type FavoriteTeammate = {
@@ -69,9 +71,9 @@ export function ProfileStatsView({ stats, isOwnProfile = true }: ProfileStatsVie
         By game
       </Typography>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3" style={{ marginBottom: 32 }}>
-        {Object.entries(byGame).map(([gameType, g]) => (
+        {Object.entries(byGame).map(([gameKey, g]) => (
           <Card
-            key={gameType}
+            key={gameKey}
             sx={{
               border: "1px solid",
               borderColor: "rgba(255,255,255,0.1)",
@@ -87,31 +89,36 @@ export function ProfileStatsView({ stats, isOwnProfile = true }: ProfileStatsVie
                 <Typography variant="body2" color="text.secondary">
                   Games: <strong style={{ color: "#e5e5e5" }}>{g.gamesPlayed}</strong>
                 </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  Wins: <strong style={{ color: "#86efac" }}>{g.wins}</strong>
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  Losses: <strong style={{ color: "#fca5a5" }}>{g.losses}</strong>
-                </Typography>
-                {g.winrate !== null && (
-                  <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-                    <EmojiEventsIcon sx={{ fontSize: 18, color: "#fbbf24" }} />
-                    <Typography variant="body2" sx={{ fontWeight: 600, color: "#a5f3fc" }}>
-                      Winrate: {g.winrate}%
+                {gameKey === "sc" ? (
+                  g.averagePlacement != null && (
+                    <Typography variant="body2" color="text.secondary">
+                      Avg placement: <strong style={{ color: "#e5e5e5" }}>{g.averagePlacement}</strong>
                     </Typography>
-                  </Box>
-                )}
-                {g.averageRating != null && (
-                  <Typography variant="body2" color="text.secondary">
-                    Avg rating: <strong style={{ color: "#e5e5e5" }}>{g.averageRating}</strong>
-                  </Typography>
+                  )
+                ) : (
+                  <>
+                    <Typography variant="body2" color="text.secondary">
+                      Wins: <strong style={{ color: "#86efac" }}>{g.wins}</strong>
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      Losses: <strong style={{ color: "#fca5a5" }}>{g.losses}</strong>
+                    </Typography>
+                    {g.winrate !== null && (
+                      <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+                        <EmojiEventsIcon sx={{ fontSize: 18, color: "#fbbf24" }} />
+                        <Typography variant="body2" sx={{ fontWeight: 600, color: "#a5f3fc" }}>
+                          Winrate: {g.winrate}%
+                        </Typography>
+                      </Box>
+                    )}
+                    {g.averageRating != null && (
+                      <Typography variant="body2" color="text.secondary">
+                        Avg rating: <strong style={{ color: "#e5e5e5" }}>{g.averageRating}</strong>
+                      </Typography>
+                    )}
+                  </>
                 )}
               </Box>
-              {g.gamesPlayed === 0 && (
-                <Typography variant="caption" color="text.secondary" sx={{ fontStyle: "italic" }}>
-                  No games recorded yet
-                </Typography>
-              )}
             </CardContent>
           </Card>
         ))}
@@ -157,7 +164,11 @@ export function ProfileStatsView({ stats, isOwnProfile = true }: ProfileStatsVie
                     {favoriteTeammates.map((t, i) => (
                       <tr key={t.name} className="border-b border-white/5 text-neutral-200">
                         <td className="py-1.5 px-2 text-neutral-500">{i + 1}</td>
-                        <td className="py-1.5 px-2 font-medium">{t.name}</td>
+                        <td className="py-1.5 px-2 font-medium">
+                          <Link href={`/profile/${encodeURIComponent(t.name)}`} className="text-cyan-200 hover:text-cyan-100 hover:underline">
+                            {t.name}
+                          </Link>
+                        </td>
                         <td className="py-1.5 px-2 text-right">{t.gamesPlayed}</td>
                         <td className="py-1.5 px-2 text-right text-green-400">{t.wins}</td>
                         <td className="py-1.5 px-2 text-right text-red-400">{t.losses}</td>
@@ -207,7 +218,11 @@ export function ProfileStatsView({ stats, isOwnProfile = true }: ProfileStatsVie
                     {mostFrequentTeammates.map((t, i) => (
                       <tr key={t.name} className="border-b border-white/5 text-neutral-200">
                         <td className="py-1.5 px-2 text-neutral-500">{i + 1}</td>
-                        <td className="py-1.5 px-2 font-medium">{t.name}</td>
+                        <td className="py-1.5 px-2 font-medium">
+                          <Link href={`/profile/${encodeURIComponent(t.name)}`} className="text-cyan-200 hover:text-cyan-100 hover:underline">
+                            {t.name}
+                          </Link>
+                        </td>
                         <td className="py-1.5 px-2 text-right font-semibold text-cyan-200">{t.count}</td>
                       </tr>
                     ))}

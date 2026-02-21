@@ -42,7 +42,7 @@ export async function GET(
 
   const byGame: Record<
     string,
-    { gamesPlayed: number; wins: number; losses: number; winrate: number | null; label: string; averageRating: number | null }
+    { gamesPlayed: number; wins: number; losses: number; winrate: number | null; label: string; averageRating: number | null; averagePlacement: number | null }
   > = {};
 
   const avgRows = await (prisma as unknown as {
@@ -71,10 +71,24 @@ export async function GET(
 
     const me = players.find((p) => normalizeName(p.name) === userName);
     const scores: (number | null)[] = me ? (JSON.parse(me.scores || "[]") as (number | null)[]) : [];
-    const wins = scores.filter((s) => s === 1).length;
-    const losses = scores.filter((s) => s === 0).length;
-    const gamesPlayed = wins + losses;
-    const winrate = gamesPlayed > 0 ? Math.round((wins / gamesPlayed) * 100) : null;
+    let gamesPlayed: number;
+    let wins: number;
+    let losses: number;
+    let winrate: number | null;
+    let averagePlacement: number | null = null;
+    if (gameType === "sc") {
+      const placementScores = scores.filter((s): s is number => s !== null && typeof s === "number" && s >= 1 && s <= 4);
+      gamesPlayed = placementScores.length;
+      wins = 0;
+      losses = 0;
+      winrate = null;
+      averagePlacement = gamesPlayed > 0 ? Math.round((placementScores.reduce((a, b) => a + b, 0) / gamesPlayed) * 10) / 10 : null;
+    } else {
+      wins = scores.filter((s) => s === 1).length;
+      losses = scores.filter((s) => s === 0).length;
+      gamesPlayed = wins + losses;
+      winrate = gamesPlayed > 0 ? Math.round((wins / gamesPlayed) * 100) : null;
+    }
 
     byGame[gameType] = {
       gamesPlayed,
@@ -83,6 +97,7 @@ export async function GET(
       winrate,
       label: GAME_LABELS[gameType] ?? gameType,
       averageRating: gameType === "sc" ? null : (avgByGame[gameType] ?? null),
+      averagePlacement: gameType === "sc" ? averagePlacement : null,
     };
   }
 

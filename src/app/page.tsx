@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { Box, Card, CardContent, Typography, CircularProgress, Button } from "@mui/material";
+import { useRouter } from "next/navigation";
+import { Box, Card, CardContent, Typography, Button, Skeleton } from "@mui/material";
 import EmojiEventsIcon from "@mui/icons-material/EmojiEvents";
 import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
 
@@ -52,6 +53,7 @@ function gamesPlayed(scores: (number | null)[]): number {
 }
 
 export default function HomePage() {
+  const router = useRouter();
   const [data, setData] = useState<Record<string, { players: RankingPlayer[]; maxSeason: number }>>({});
   const [loading, setLoading] = useState(true);
 
@@ -115,9 +117,40 @@ export default function HomePage() {
       </Box>
 
       {loading ? (
-        <Box sx={{ display: "flex", justifyContent: "center", alignItems: "center", py: 10 }}>
-          <CircularProgress size={40} sx={{ color: "#67e8f9" }} />
-        </Box>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          {GAMES.map((g) => (
+            <Card
+              key={g.slug}
+              sx={{
+                border: "1px solid",
+                borderColor: "rgba(255,255,255,0.08)",
+                borderRadius: 2,
+                background: "rgba(26, 26, 26, 0.8)",
+              }}
+            >
+              <Box sx={{ height: 4, borderRadius: "8px 8px 0 0", background: g.accent }} />
+              <CardContent sx={{ pt: 2, pb: 2.5, "&:last-child": { pb: 2.5 } }}>
+                <div className="flex items-center justify-between mb-3">
+                  <Skeleton variant="text" width={140} height={32} />
+                  <Skeleton variant="rounded" width={56} height={24} sx={{ borderRadius: 1 }} />
+                </div>
+                <ul className="space-y-0">
+                  {Array.from({ length: 10 }).map((_, i) => (
+                    <li key={i} className="flex items-center justify-between py-1.5 px-2 rounded-md gap-3">
+                      <span className="flex items-center gap-2 min-w-0 flex-1">
+                        <Skeleton variant="text" width={20} height={20} />
+                        <Skeleton variant="text" width={80 + (i % 3) * 20} height={20} sx={{ maxWidth: 160 }} />
+                      </span>
+                      <Skeleton variant="text" width={48} height={18} />
+                      <Skeleton variant="text" width={36} height={18} />
+                    </li>
+                  ))}
+                </ul>
+                <Skeleton variant="rounded" width={100} height={32} sx={{ mt: 2, borderRadius: 1 }} />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           {GAMES.map((g) => {
@@ -200,7 +233,17 @@ export default function HomePage() {
                                 {i + 1}
                               </span>
                             )}
-                            <span className="font-medium truncate">{p.playerName || "—"}</span>
+                            <button
+                              type="button"
+                              className="font-medium truncate text-cyan-200 hover:text-cyan-100 hover:underline text-left bg-transparent border-0 cursor-pointer p-0"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                if (p.playerName?.trim()) router.push(`/profile/${encodeURIComponent(p.playerName.trim())}`);
+                              }}
+                            >
+                              {p.playerName || "—"}
+                            </button>
                           </span>
                           <Typography
                             component="span"
@@ -220,11 +263,11 @@ export default function HomePage() {
                               fontSize: "0.875rem",
                               fontWeight: 600,
                               letterSpacing: "0.02em",
-                              color: p.wr !== null ? "#a5f3fc" : "text.secondary",
+                              color: g.slug === "sc" ? "#a5f3fc" : p.wr !== null ? "#a5f3fc" : "text.secondary",
                               flexShrink: 0,
                             }}
                           >
-                            {p.wr !== null ? `${p.wr}%` : "—"}
+                            {g.slug === "sc" ? (p.games > 0 ? `Avg ${Number(p.avg).toFixed(1)}` : "—") : (p.wr !== null ? `${p.wr}%` : "—")}
                           </Typography>
                         </li>
                       ))}

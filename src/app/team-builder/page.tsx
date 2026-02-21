@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
+import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { balanceTeams, type Player } from "@/lib/teamBalancer";
 import {
@@ -241,12 +242,18 @@ export default function TeamBuilderPage() {
   const [playerInputFocused, setPlayerInputFocused] = useState(false);
   const [addPlayerError, setAddPlayerError] = useState<string | null>(null);
   const [dropdownRect, setDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null);
+  const [editingPlayerId, setEditingPlayerId] = useState<string | null>(null);
+  const [editSuggestions, setEditSuggestions] = useState<string[]>([]);
+  const [editSuggestionsIndex, setEditSuggestionsIndex] = useState(0);
+  const [editSuggestionsLoading, setEditSuggestionsLoading] = useState(false);
+  const [editDropdownRect, setEditDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null);
   const [averageRatingsByPlayer, setAverageRatingsByPlayer] = useState<Record<string, number>>({});
   const [scPlacementsGame, setScPlacementsGame] = useState<SharedGame | null>(null);
   const [scPlacements, setScPlacements] = useState<Record<string, number>>({});
   const [scPlacementsError, setScPlacementsError] = useState<string | null>(null);
   const playerInputRef = useRef<HTMLInputElement>(null);
   const playerInputContainerRef = useRef<HTMLDivElement>(null);
+  const editInputContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setPlayers(loadTeamBuilderPlayers());
@@ -390,6 +397,80 @@ export default function TeamBuilderPage() {
     }, 100);
     return () => clearTimeout(t);
   }, [newName, existingPlayers, registeredUserNames]);
+
+  const editingName = editingPlayerId ? (players.find((p) => p.id === editingPlayerId)?.name ?? "") : "";
+
+  useEffect(() => {
+    if (!editingPlayerId) {
+      setEditSuggestions([]);
+      setEditSuggestionsIndex(0);
+      return;
+    }
+    const q = editingName.trim();
+    const local = [...new Set([...existingPlayers, ...registeredUserNames])].filter(
+      (n) => n && q && n.toLowerCase().includes(q.toLowerCase())
+    );
+    if (!q) {
+      setEditSuggestions([]);
+      setEditSuggestionsIndex(0);
+      return;
+    }
+    const t = setTimeout(async () => {
+      if (q.length >= 2) {
+        setEditSuggestionsLoading(true);
+        try {
+          const res = await fetch(`/api/users/search?q=${encodeURIComponent(q)}`);
+          const data = await res.json();
+          const users = (data.users ?? []) as { username: string; name: string }[];
+          const fromApi = users.map((u) => (u.name && u.name !== u.username ? `${u.name} (@${u.username})` : u.username));
+          const merged = [...local, ...fromApi].filter(Boolean);
+          const seen = new Set<string>();
+          const unique = merged.filter((s) => {
+            const k = s.trim().toLowerCase();
+            if (seen.has(k)) return false;
+            seen.add(k);
+            return true;
+          });
+          setEditSuggestions(unique);
+        } catch {
+          setEditSuggestions(local);
+        } finally {
+          setEditSuggestionsLoading(false);
+        }
+      } else {
+        const seen = new Set<string>();
+        const uniqueLocal = local.filter((s) => {
+          const k = s.trim().toLowerCase();
+          if (seen.has(k)) return false;
+          seen.add(k);
+          return true;
+        });
+        setEditSuggestions(uniqueLocal);
+      }
+      setEditSuggestionsIndex(0);
+    }, 100);
+    return () => clearTimeout(t);
+  }, [editingPlayerId, editingName, existingPlayers, registeredUserNames]);
+
+  useEffect(() => {
+    if (!editingPlayerId || editSuggestions.length === 0) {
+      setEditDropdownRect(null);
+      return;
+    }
+    const el = editInputContainerRef.current;
+    if (!el) return;
+    const update = () => {
+      const r = el.getBoundingClientRect();
+      setEditDropdownRect({ top: r.bottom + 4, left: r.left, width: Math.max(r.width, 200) });
+    };
+    update();
+    window.addEventListener("scroll", update, true);
+    window.addEventListener("resize", update);
+    return () => {
+      window.removeEventListener("scroll", update, true);
+      window.removeEventListener("resize", update);
+    };
+  }, [editingPlayerId, editSuggestions.length]);
 
   useEffect(() => {
     if (!session?.user) {
@@ -807,7 +888,9 @@ export default function TeamBuilderPage() {
                       <ul className="list-none p-0 m-0 space-y-1">
                         {game.teamA.map((p) => (
                           <li key={p.id} className="flex justify-between text-sm">
-                            <span className="text-neutral-200">{p.name}</span>
+                            <Link href={`/profile/${encodeURIComponent((p.name ?? "").trim())}`} className="text-neutral-200 hover:text-cyan-200 hover:underline">
+                              {p.name}
+                            </Link>
                             {game.gameType !== "sc" && <span className="font-semibold text-cyan-200">{p.rating ?? "—"}</span>}
                           </li>
                         ))}
@@ -836,7 +919,9 @@ export default function TeamBuilderPage() {
                       <ul className="list-none p-0 m-0 space-y-1">
                         {game.teamB.map((p) => (
                           <li key={p.id} className="flex justify-between text-sm">
-                            <span className="text-neutral-200">{p.name}</span>
+                            <Link href={`/profile/${encodeURIComponent((p.name ?? "").trim())}`} className="text-neutral-200 hover:text-cyan-200 hover:underline">
+                              {p.name}
+                            </Link>
                             {game.gameType !== "sc" && <span className="font-semibold text-pink-200">{p.rating ?? "—"}</span>}
                           </li>
                         ))}
@@ -1210,10 +1295,38 @@ export default function TeamBuilderPage() {
                 key={p.id}
                 className="flex items-center gap-2 py-1 px-2 rounded bg-cyan-500/5 border border-cyan-500/20"
               >
-                <Box sx={{ width: 700, flexShrink: 0, display: "flex", alignItems: "center", gap: 1 }}>
+                <Box
+                  ref={editingPlayerId === p.id ? editInputContainerRef : undefined}
+                  sx={{ width: selectedGame === "sc" ? 900 : 700, flexShrink: 0, display: "flex", alignItems: "center", gap: 1 }}
+                >
                   <TextField
                     value={p.name}
                     onChange={(e) => handleNameChange(p.id, e.target.value)}
+                    onFocus={() => setEditingPlayerId(p.id)}
+                    onBlur={() => setTimeout(() => setEditingPlayerId(null), 150)}
+                    onKeyDown={(e) => {
+                      if (editingPlayerId !== p.id) return;
+                      const suggestion = editSuggestions[editSuggestionsIndex];
+                      const displaySuggestion = suggestion && suggestion.toLowerCase().startsWith((p.name ?? "").trim().toLowerCase())
+                        ? suggestion.slice((p.name ?? "").trim().length)
+                        : "";
+                      if (e.key === "Tab" && suggestion && displaySuggestion) {
+                        e.preventDefault();
+                        handleNameChange(p.id, suggestion);
+                        setEditSuggestions([]);
+                        return;
+                      }
+                      if (e.key === "ArrowDown") {
+                        e.preventDefault();
+                        if (editSuggestions.length) setEditSuggestionsIndex((i) => (i + 1) % editSuggestions.length);
+                        return;
+                      }
+                      if (e.key === "ArrowUp") {
+                        e.preventDefault();
+                        if (editSuggestions.length) setEditSuggestionsIndex((i) => (i - 1 + editSuggestions.length) % editSuggestions.length);
+                        return;
+                      }
+                    }}
                     size="small"
                     sx={{
                       flex: 1,
@@ -1222,6 +1335,9 @@ export default function TeamBuilderPage() {
                       "& .MuiInputBase-input": { py: 0.5, fontSize: "0.875rem" },
                     }}
                   />
+                  {editingPlayerId === p.id && editSuggestionsLoading && (
+                    <Typography component="span" variant="caption" sx={{ color: "text.secondary", flexShrink: 0 }}>…</Typography>
+                  )}
                   {selectedGame !== "sc" && (
                     <Box
                       sx={{
@@ -1262,6 +1378,39 @@ export default function TeamBuilderPage() {
             );
             })}
           </div>
+          {typeof document !== "undefined" &&
+            editingPlayerId &&
+            editDropdownRect &&
+            editSuggestions.length > 0 &&
+            createPortal(
+              <ul
+                className="list-none fixed max-h-48 overflow-auto rounded-md border border-cyan-500/30 bg-black/95 shadow-xl"
+                style={{
+                  top: editDropdownRect.top,
+                  left: editDropdownRect.left,
+                  width: editDropdownRect.width,
+                  zIndex: 1300,
+                }}
+              >
+                {editSuggestions.map((name, i) => (
+                  <li key={name}>
+                    <button
+                      type="button"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        if (editingPlayerId) handleNameChange(editingPlayerId, name);
+                        setEditSuggestions([]);
+                        setEditingPlayerId(null);
+                      }}
+                      className={`w-full text-left px-3 py-2 text-sm transition-colors ${i === editSuggestionsIndex ? "bg-cyan-500/25 text-cyan-200" : "text-neutral-200 hover:bg-cyan-500/10"}`}
+                    >
+                      {capitalizeFirst(name)}
+                    </button>
+                  </li>
+                ))}
+              </ul>,
+              document.body
+            )}
         </CardContent>
       </Card>
 
@@ -1387,7 +1536,9 @@ export default function TeamBuilderPage() {
                           <ul className="list-none p-0 m-0 space-y-1 text-neutral-300">
                             {game.teamA.map((p) => (
                               <li key={p.id} className="flex justify-between text-base">
-                                <span>{p.name}</span>
+                                <Link href={`/profile/${encodeURIComponent((p.name ?? "").trim())}`} className="hover:text-cyan-200 hover:underline">
+                                  {p.name}
+                                </Link>
                                 {game.gameType !== "sc" && <span className="font-semibold text-cyan-200">{p.rating ?? "—"}</span>}
                               </li>
                             ))}
@@ -1416,7 +1567,9 @@ export default function TeamBuilderPage() {
                           <ul className="list-none p-0 m-0 space-y-1 text-neutral-300">
                             {game.teamB.map((p) => (
                               <li key={p.id} className="flex justify-between text-base">
-                                <span>{p.name}</span>
+                                <Link href={`/profile/${encodeURIComponent((p.name ?? "").trim())}`} className="hover:text-cyan-200 hover:underline">
+                                  {p.name}
+                                </Link>
                                 {game.gameType !== "sc" && <span className="font-semibold text-pink-200">{p.rating ?? "—"}</span>}
                               </li>
                             ))}
@@ -1511,20 +1664,38 @@ export default function TeamBuilderPage() {
         </Box>
       )}
 
+      {selectedGame === "sc" ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+          {[...result.teamA, ...result.teamB].slice(0, 4).map((p, i) => (
+            <Card key={p.id} sx={{ border: "2px solid", borderColor: "rgba(103,232,249,0.35)", background: "rgba(103,232,249,0.04)" }}>
+              <CardContent sx={{ py: 1.5 }}>
+                <Typography variant="caption" fontWeight={700} sx={{ color: "text.secondary", display: "block", mb: 0.5 }}>
+                  Player {i + 1}
+                </Typography>
+                <Link href={`/profile/${encodeURIComponent((p.name ?? "").trim())}`} className="text-cyan-200 hover:text-cyan-100 hover:underline font-medium">
+                  {p.name}
+                </Link>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      ) : (
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <Card sx={{ border: "2px solid", borderColor: "rgba(103,232,249,0.4)", background: "rgba(103,232,249,0.03)" }}>
           <CardContent sx={{ py: 2 }}>
             <div className="flex justify-between items-center mb-2">
               <Typography variant="subtitle1" fontWeight={600} sx={{ color: "#67e8f9" }}>
-                Yin{selectedGame !== "sc" ? ` — ${result.teamAScore}` : ""}
+                Yin — {result.teamAScore}
               </Typography>
             </div>
             <Divider sx={{ my: 1.5, borderColor: "rgba(103,232,249,0.2)" }} />
             <ul className="space-y-0.5">
               {result.teamA.map((p) => (
                 <li key={p.id} className="flex justify-between text-sm">
-                  <span>{p.name}</span>
-                  {selectedGame !== "sc" && <span className="font-medium">{p.rating}</span>}
+                  <Link href={`/profile/${encodeURIComponent((p.name ?? "").trim())}`} className="hover:text-cyan-200 hover:underline">
+                    {p.name}
+                  </Link>
+                  <span className="font-medium">{p.rating}</span>
                 </li>
               ))}
             </ul>
@@ -1534,21 +1705,24 @@ export default function TeamBuilderPage() {
           <CardContent sx={{ py: 2 }}>
             <div className="flex justify-between items-center mb-2">
               <Typography variant="subtitle1" fontWeight={600} sx={{ color: "#f9a8d4" }}>
-                Yang{selectedGame !== "sc" ? ` — ${result.teamBScore}` : ""}
+                Yang — {result.teamBScore}
               </Typography>
             </div>
             <Divider sx={{ my: 1.5, borderColor: "rgba(249,168,212,0.2)" }} />
             <ul className="space-y-0.5">
               {result.teamB.map((p) => (
                 <li key={p.id} className="flex justify-between text-sm">
-                  <span>{p.name}</span>
-                  {selectedGame !== "sc" && <span className="font-medium">{p.rating}</span>}
+                  <Link href={`/profile/${encodeURIComponent((p.name ?? "").trim())}`} className="hover:text-cyan-200 hover:underline">
+                    {p.name}
+                  </Link>
+                  <span className="font-medium">{p.rating}</span>
                 </li>
               ))}
             </ul>
           </CardContent>
         </Card>
       </div>
+      )}
     </Box>
       )}
 

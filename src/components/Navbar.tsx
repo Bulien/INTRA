@@ -34,8 +34,25 @@ export function Navbar() {
   const [searchResults, setSearchResults] = useState<SearchUser[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [completionIndex, setCompletionIndex] = useState(0);
+  const [activeGamesCount, setActiveGamesCount] = useState(0);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const searchContainerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (status !== "authenticated" || !session?.user) {
+      setActiveGamesCount(0);
+      return;
+    }
+    const fetchCount = () => {
+      fetch("/api/team-builder/games?status=pending", { cache: "no-store" })
+        .then((res) => (res.ok ? res.json() : { games: [] }))
+        .then((data) => setActiveGamesCount((data.games ?? []).length))
+        .catch(() => setActiveGamesCount(0));
+    };
+    fetchCount();
+    const interval = setInterval(fetchCount, 15000);
+    return () => clearInterval(interval);
+  }, [status, session?.user]);
 
   useEffect(() => {
     if (searchOpen) {
@@ -165,17 +182,26 @@ export function Navbar() {
                 link.href === "/"
                   ? pathname === "/"
                   : pathname?.startsWith(link.href);
+              const showGameBadge = link.href === "/team-builder" && activeGamesCount > 0;
               return (
                 <Link
                   key={link.href}
                   href={link.href}
-                  className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                  className={`relative px-3 py-2 rounded-md text-sm font-medium transition-colors ${
                     isActive
                       ? "bg-cyan-500/20 text-cyan-300"
                       : "text-neutral-400 hover:text-pink-200 hover:bg-pink-500/10"
                   }`}
                 >
                   {link.label}
+                  {showGameBadge && (
+                    <span
+                      className="absolute -top-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-cyan-400 text-[10px] font-bold text-black"
+                      aria-label={`${activeGamesCount} game(s) in progress`}
+                    >
+                      {activeGamesCount > 9 ? "9+" : activeGamesCount}
+                    </span>
+                  )}
                 </Link>
               );
             })}

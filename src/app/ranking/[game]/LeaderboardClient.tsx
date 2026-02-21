@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Box, Typography, CircularProgress } from "@mui/material";
+import Link from "next/link";
+import { Box, Skeleton, Typography } from "@mui/material";
 import EmojiEventsIcon from "@mui/icons-material/EmojiEvents";
 
 type PlayerRow = {
@@ -129,8 +130,27 @@ export function LeaderboardClient({
       </Box>
 
       {loading ? (
-        <Box sx={{ display: "flex", justifyContent: "center", alignItems: "center", flex: 1, py: 8 }}>
-          <CircularProgress sx={{ color: "#67e8f9" }} />
+        <Box sx={{ display: "flex", flexDirection: "column", flex: 1, gap: 0, pr: 1 }}>
+          {Array.from({ length: 14 }).map((_, i) => (
+            <Box
+              key={i}
+              sx={{
+                display: "grid",
+                gridTemplateColumns: gameType === "sc" ? "56px 1fr 80px 80px" : "56px 1fr 72px 72px 80px",
+                gap: 2,
+                alignItems: "center",
+                py: 1.5,
+                px: 2,
+                borderBottom: "1px solid rgba(255,255,255,0.06)",
+              }}
+            >
+              <Skeleton variant="text" width={36} height={24} sx={{ flexShrink: 0 }} />
+              <Skeleton variant="text" width={140} height={24} sx={{ maxWidth: "100%" }} />
+              <Skeleton variant="text" width={48} height={20} />
+              <Skeleton variant="text" width={48} height={20} />
+              {gameType !== "sc" && <Skeleton variant="text" width={40} height={20} />}
+            </Box>
+          ))}
         </Box>
       ) : (
         <Box
@@ -180,9 +200,13 @@ export function LeaderboardClient({
                       #{rank}
                     </Typography>
                   </Box>
-                  <Typography variant="body1" fontWeight={600} sx={{ color: "text.primary" }} noWrap>
+                  <Link
+                    href={`/profile/${encodeURIComponent(p.playerName || "")}`}
+                    className="font-semibold text-cyan-200 hover:text-cyan-100 hover:underline truncate block"
+                    style={{ color: "inherit", textDecoration: "none" }}
+                  >
                     {p.playerName || "—"}
-                  </Typography>
+                  </Link>
                   {isSc ? (
                     <>
                       <Typography variant="body2" sx={{ color: "text.secondary", fontVariantNumeric: "tabular-nums" }}>
