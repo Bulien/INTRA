@@ -18,6 +18,8 @@ import {
   Slider,
   Divider,
   Autocomplete,
+  ToggleButtonGroup,
+  ToggleButton,
 } from "@mui/material";
 import DeleteIcon from "@mui/icons-material/Delete";
 import AddIcon from "@mui/icons-material/Add";
@@ -779,19 +781,32 @@ export default function TeamBuilderPage() {
           <Typography variant="subtitle1" sx={{ fontWeight: 600, color: "text.primary" }}>
             Game
           </Typography>
-          <Autocomplete
-            value={GAMES.find((g) => g.value === selectedGame) || GAMES[0]}
-            onChange={(_, newValue) => {
-              if (newValue) setSelectedGame(newValue.value);
-            }}
-            options={GAMES}
-            getOptionLabel={(option) => option.label}
+          <ToggleButtonGroup
+            value={selectedGame}
+            exclusive
+            onChange={(_, value) => value != null && setSelectedGame(value)}
             size="small"
-            sx={{ minWidth: 140 }}
-            renderInput={(params) => (
-              <TextField {...params} variant="outlined" size="small" />
-            )}
-          />
+            sx={{
+              "& .MuiToggleButtonGroup-grouped": { border: 1 },
+              "& .MuiToggleButton-root": {
+                px: 2,
+                py: 0.75,
+                textTransform: "none",
+                fontWeight: 600,
+                "&.Mui-selected": {
+                  bgcolor: "rgba(103,232,249,0.25)",
+                  color: "#67e8f9",
+                  "&:hover": { bgcolor: "rgba(103,232,249,0.35)" },
+                },
+              },
+            }}
+          >
+            {GAMES.map((g) => (
+              <ToggleButton key={g.value} value={g.value} aria-label={g.label}>
+                {g.label}
+              </ToggleButton>
+            ))}
+          </ToggleButtonGroup>
         </div>
       </div>
 
