@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
-const VALID_GAMES = ["lol", "ow", "battlerite"];
+const VALID_GAMES = ["lol", "ow", "sc", "battlerite"];
 
 function checkTeamBuilderGame() {
   const client = prisma as unknown as { teamBuilderGame?: unknown };

@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
 const GAME_TYPES = ["lol", "ow", "sc", "battlerite"] as const;
@@ -14,16 +13,32 @@ function normalizeName(s: string): string {
   return (s ?? "").trim().toLowerCase();
 }
 
-export async function GET() {
-  const session = await auth();
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: "Sign in required" }, { status: 401 });
+export async function GET(
+  _request: Request,
+  { params }: { params: Promise<{ username: string }> }
+) {
+  const { username: usernameParam } = await params;
+  const username = decodeURIComponent(usernameParam).trim();
+  if (!username) {
+    return NextResponse.json({ error: "Username required" }, { status: 400 });
   }
 
-  const userName = normalizeName(session.user.name ?? session.user.email ?? "");
-  if (!userName) {
-    return NextResponse.json({ byGame: {}, favoriteTeammates: [], totalGames: 0 });
+  const user = await prisma.user.findFirst({
+    where: {
+      OR: [
+        { username: { equals: username, mode: "insensitive" } },
+        { name: { equals: username, mode: "insensitive" } },
+      ],
+    },
+    select: { username: true, name: true },
+  });
+
+  if (!user) {
+    return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
+
+  const displayName = (user.name ?? user.username ?? "").trim() || username;
+  const userName = normalizeName(displayName);
 
   const byGame: Record<
     string,
@@ -127,6 +142,6 @@ export async function GET() {
     favoriteTeammates,
     mostFrequentTeammates,
     totalGames,
-    userName: session.user.name ?? session.user.email ?? "User",
+    userName: displayName || username,
   });
 }

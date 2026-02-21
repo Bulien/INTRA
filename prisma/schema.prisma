@@ -123,3 +123,14 @@ model TeamBuilderGame {
   @@index([status])
   @@index([createdAt])
 }
+
+model PlayerGameRating {
+  id         String   @id @default(cuid())
+  playerName String
+  gameType   String
+  rating     Int
+  gameId     String
+  createdAt  DateTime @default(now())
+
+  @@index([playerName, gameType])
+}

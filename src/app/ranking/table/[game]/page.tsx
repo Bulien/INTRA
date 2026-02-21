@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
-import { LeaderboardClient } from "./LeaderboardClient";
+import { auth } from "@/lib/auth";
+import { RankingClient } from "@/app/ranking/[game]/RankingClient";
 
 const GAMES: Record<string, string> = {
   lol: "League of Legends",
@@ -8,7 +9,7 @@ const GAMES: Record<string, string> = {
   battlerite: "Battlerite",
 };
 
-export default async function RankingPage({
+export default async function RankingTablePage({
   params,
 }: {
   params: Promise<{ game: string }>;
@@ -16,10 +17,12 @@ export default async function RankingPage({
   const { game } = await params;
   const valid = ["lol", "ow", "sc", "battlerite"];
   if (!valid.includes(game)) {
-    redirect("/ranking/lol");
+    redirect("/ranking/table/lol");
   }
+  const session = await auth();
+  const isAdmin = session?.user?.role === "admin";
 
   return (
-    <LeaderboardClient gameType={game} gameName={GAMES[game]} />
+    <RankingClient gameType={game} gameName={GAMES[game]} isAdmin={isAdmin} />
   );
 }

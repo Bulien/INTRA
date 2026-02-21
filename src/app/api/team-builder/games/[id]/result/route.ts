@@ -180,6 +180,19 @@ export async function POST(
 
   await recordWinToRanking(game.gameType, game.season, winningNames, losingNames);
 
+  const allPlayers = [...teamA, ...teamB].filter((p) => (p.name ?? "").trim());
+  const ratingInserts = allPlayers.map((p) => ({
+    playerName: (p.name ?? "").trim().toLowerCase(),
+    gameType: game.gameType,
+    rating: Math.round(Math.min(10, Math.max(1, Number(p.rating) || 5))),
+    gameId: id,
+  }));
+  if (ratingInserts.length > 0) {
+    await (prisma as unknown as { playerGameRating: { createMany: (args: { data: typeof ratingInserts }) => Promise<unknown> } }).playerGameRating.createMany({
+      data: ratingInserts,
+    });
+  }
+
   await prisma.teamBuilderGame.update({
     where: { id },
     data: { status: "result_submitted", winner },

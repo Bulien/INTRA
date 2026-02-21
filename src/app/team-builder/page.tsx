@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { useSession } from "next-auth/react";
 import { balanceTeams, type Player } from "@/lib/teamBalancer";
 import {
@@ -17,21 +18,23 @@ import {
   Typography,
   Slider,
   Divider,
-  Autocomplete,
+  Tooltip,
   ToggleButtonGroup,
   ToggleButton,
 } from "@mui/material";
 import DeleteIcon from "@mui/icons-material/Delete";
 import AddIcon from "@mui/icons-material/Add";
 import EmojiEventsIcon from "@mui/icons-material/EmojiEvents";
+import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import ShuffleIcon from "@mui/icons-material/Shuffle";
 import { sanitizeDisplayName } from "@/lib/sanitizeInput";
 
 const GAMES = [
-  { value: "lol", label: "LoL" },
-  { value: "ow", label: "Overwatch" },
-  { value: "battlerite", label: "Battlerite" },
+  { value: "lol", label: "LoL", maxPlayers: 10 },
+  { value: "ow", label: "Overwatch", maxPlayers: 12 },
+  { value: "sc", label: "Survival Chaos", maxPlayers: 4 },
+  { value: "battlerite", label: "Battlerite", maxPlayers: 6 },
 ];
 
 const TEAM_BUILDER_STORAGE_KEY = "team-balancer-team-builder-players";
@@ -225,10 +228,32 @@ export default function TeamBuilderPage() {
   const [finishingGameId, setFinishingGameId] = useState<string | null>(null);
   const [canValidate, setCanValidate] = useState(false);
   const [validateUserCount, setValidateUserCount] = useState(0);
+  const [playerSuggestions, setPlayerSuggestions] = useState<string[]>([]);
+  const [playerSuggestionsLoading, setPlayerSuggestionsLoading] = useState(false);
+  const [playerSuggestionsIndex, setPlayerSuggestionsIndex] = useState(0);
+  const [playerInputFocused, setPlayerInputFocused] = useState(false);
+  const [addPlayerError, setAddPlayerError] = useState<string | null>(null);
+  const [dropdownRect, setDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null);
+  const [averageRatingsByPlayer, setAverageRatingsByPlayer] = useState<Record<string, number>>({});
+  const playerInputRef = useRef<HTMLInputElement>(null);
+  const playerInputContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setPlayers(loadTeamBuilderPlayers());
   }, []);
+
+  useEffect(() => {
+    if (players.length === 0 || !selectedGame) {
+      setAverageRatingsByPlayer({});
+      return;
+    }
+    const names = players.map((p) => p.name.trim().toLowerCase()).filter(Boolean);
+    if (names.length === 0) return;
+    fetch(`/api/team-builder/average-ratings?gameType=${encodeURIComponent(selectedGame)}&names=${encodeURIComponent(names.join(","))}`)
+      .then((res) => (res.ok ? res.json() : { averages: {} }))
+      .then((data) => setAverageRatingsByPlayer(data.averages ?? {}))
+      .catch(() => setAverageRatingsByPlayer({}));
+  }, [players, selectedGame]);
 
   const fetchCanValidate = useCallback(() => {
     fetch("/api/team-builder/can-validate", { cache: "no-store" })
@@ -281,6 +306,80 @@ export default function TeamBuilderPage() {
       .catch(() => setRegisteredUserNames([]));
   }, [session?.user]);
 
+  // Position dropdown in portal so it isn't cropped
+  useEffect(() => {
+    if (!playerInputFocused || playerSuggestions.length === 0) {
+      setDropdownRect(null);
+      return;
+    }
+    const el = playerInputContainerRef.current;
+    if (!el) return;
+    const update = () => {
+      const r = el.getBoundingClientRect();
+      setDropdownRect({ top: r.bottom + 4, left: r.left, width: r.width });
+    };
+    update();
+    window.addEventListener("scroll", update, true);
+    window.addEventListener("resize", update);
+    return () => {
+      window.removeEventListener("scroll", update, true);
+      window.removeEventListener("resize", update);
+    };
+  }, [playerInputFocused, playerSuggestions.length]);
+
+  // Clear add-player error when user types
+  useEffect(() => {
+    setAddPlayerError(null);
+  }, [newName]);
+
+  // Debounced user search for player name (100ms) + local filter
+  useEffect(() => {
+    const q = newName.trim();
+    const local = [...new Set([...existingPlayers, ...registeredUserNames])].filter(
+      (n) => n && q && n.toLowerCase().includes(q.toLowerCase())
+    );
+    if (!q) {
+      setPlayerSuggestions([]);
+      setPlayerSuggestionsIndex(0);
+      return;
+    }
+    const t = setTimeout(async () => {
+      if (q.length >= 2) {
+        setPlayerSuggestionsLoading(true);
+        try {
+          const res = await fetch(`/api/users/search?q=${encodeURIComponent(q)}`);
+          const data = await res.json();
+          const users = (data.users ?? []) as { username: string; name: string }[];
+          const fromApi = users.map((u) => (u.name && u.name !== u.username ? `${u.name} (@${u.username})` : u.username));
+          const merged = [...local, ...fromApi].filter(Boolean);
+          const seen = new Set<string>();
+          const unique = merged.filter((s) => {
+            const k = s.trim().toLowerCase();
+            if (seen.has(k)) return false;
+            seen.add(k);
+            return true;
+          });
+          setPlayerSuggestions(unique);
+        } catch {
+          setPlayerSuggestions(local);
+        } finally {
+          setPlayerSuggestionsLoading(false);
+        }
+      } else {
+        const seen = new Set<string>();
+        const uniqueLocal = local.filter((s) => {
+          const k = s.trim().toLowerCase();
+          if (seen.has(k)) return false;
+          seen.add(k);
+          return true;
+        });
+        setPlayerSuggestions(uniqueLocal);
+      }
+      setPlayerSuggestionsIndex(0);
+    }, 100);
+    return () => clearTimeout(t);
+  }, [newName, existingPlayers, registeredUserNames]);
+
   useEffect(() => {
     if (!session?.user) {
       setActiveSharedGames([]);
@@ -314,15 +413,28 @@ export default function TeamBuilderPage() {
     updatePlayer(id, { name: capitalized });
   }, [updatePlayer]);
 
+  const selectedGameConfig = GAMES.find((g) => g.value === selectedGame);
+  const maxPlayers = selectedGameConfig?.maxPlayers ?? 99;
+
   const addPlayer = useCallback(() => {
     const name = newName.trim();
     if (!name) return;
 
+    setAddPlayerError(null);
+    if (players.length >= maxPlayers) {
+      setAddPlayerError(`${selectedGameConfig?.label ?? selectedGame} allows max ${maxPlayers} players.`);
+      return;
+    }
+
     const capitalized = capitalizeFirst(name);
 
-    const existing = existingPlayers.find(
-      (p) => p.toLowerCase() === capitalized.toLowerCase()
+    const alreadyInList = players.some(
+      (p) => p.name.trim().toLowerCase() === capitalized.toLowerCase()
     );
+    if (alreadyInList) {
+      setAddPlayerError("Already in the list");
+      return;
+    }
 
     const id = crypto.randomUUID();
     const fromRegistered = [...existingPlayers, ...registeredUserNames].find(
@@ -330,7 +442,7 @@ export default function TeamBuilderPage() {
     );
     setPlayers((prev) => [...prev, { id, name: fromRegistered || capitalized, rating: 5 }]);
     setNewName("");
-  }, [newName, existingPlayers, registeredUserNames]);
+  }, [newName, players, existingPlayers, registeredUserNames, selectedGame, selectedGameConfig?.label, maxPlayers]);
 
   const removePlayer = useCallback((id: string) => {
     setPlayers((prev) => prev.filter((p) => p.id !== id));
@@ -404,8 +516,6 @@ export default function TeamBuilderPage() {
     const losingNames = losingTeam.map((p) => p.name);
     await recordWin(selectedGame, maxSeason, winningNames, losingNames);
   }, [result, selectedGame, maxSeason]);
-
-  const isOdd = players.length % 2 !== 0;
 
   const [confirmWinOpen, setConfirmWinOpen] = useState(false);
   const [confirmWinTeam, setConfirmWinTeam] = useState<"yin" | "yang" | null>(null);
@@ -826,35 +936,167 @@ export default function TeamBuilderPage() {
             }}
             className="flex gap-3 items-center flex-wrap"
           >
-            <Autocomplete
-              freeSolo
-              value={newName}
-              onChange={(_, value) => setNewName(sanitizeDisplayName(value ?? ""))}
-              onInputChange={(_, value) => setNewName(sanitizeDisplayName(value ?? ""))}
-              options={[...new Set([...existingPlayers, ...registeredUserNames])]}
-              renderInput={(params) => (
-                <TextField
-                  {...params}
-                  label="Player name"
-                  variant="outlined"
-                  size="small"
-                  sx={{ minWidth: 200 }}
+            <Box ref={playerInputContainerRef} sx={{ position: "relative", width: 220, flexShrink: 0 }}>
+              <Box
+                sx={{
+                  position: "relative",
+                  border: "1px solid",
+                  borderColor: "divider",
+                  borderRadius: 1,
+                  height: 40,
+                  overflow: "hidden",
+                  "&:focus-within": { outline: "1px solid", outlineColor: "primary.main", outlineOffset: -1 },
+                }}
+              >
+                <Box
+                  sx={{
+                    position: "absolute",
+                    inset: 0,
+                    display: "flex",
+                    alignItems: "center",
+                    px: 1.5,
+                    pointerEvents: "none",
+                    overflow: "hidden",
+                    fontSize: "0.875rem",
+                  }}
+                  aria-hidden
+                >
+                  {newName ? (
+                    <>
+                      <span style={{ color: "inherit" }}>{newName}</span>
+                      {(() => {
+                        const s = playerSuggestions[playerSuggestionsIndex];
+                        const suffix = s && newName.trim() && s.toLowerCase().startsWith(newName.trim().toLowerCase())
+                          ? s.slice(newName.trim().length)
+                          : "";
+                        return suffix ? <span style={{ color: "rgba(255,255,255,0.5)" }}>{suffix}</span> : null;
+                      })()}
+                    </>
+                  ) : (
+                    <span style={{ color: "rgba(255,255,255,0.5)" }}>Add by name…</span>
+                  )}
+                </Box>
+                <input
+                  ref={playerInputRef}
+                  type="text"
+                  value={newName}
+                  onChange={(e) => setNewName(sanitizeDisplayName(e.target.value))}
+                  onFocus={() => setPlayerInputFocused(true)}
+                  onBlur={() => setTimeout(() => setPlayerInputFocused(false), 150)}
+                  onKeyDown={(e) => {
+                    const suggestion = playerSuggestions[playerSuggestionsIndex];
+                    const displaySuggestion = suggestion && suggestion.toLowerCase().startsWith(newName.trim().toLowerCase())
+                      ? suggestion.slice(newName.trim().length)
+                      : "";
+                    if (e.key === "Tab" && suggestion && displaySuggestion) {
+                      e.preventDefault();
+                      setNewName(suggestion);
+                      setPlayerSuggestions([]);
+                      return;
+                    }
+                    if (e.key === "ArrowDown") {
+                      e.preventDefault();
+                      if (playerSuggestions.length) setPlayerSuggestionsIndex((i) => (i + 1) % playerSuggestions.length);
+                      return;
+                    }
+                    if (e.key === "ArrowUp") {
+                      e.preventDefault();
+                      if (playerSuggestions.length) setPlayerSuggestionsIndex((i) => (i - 1 + playerSuggestions.length) % playerSuggestions.length);
+                      return;
+                    }
+                  }}
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    width: "100%",
+                    background: "transparent",
+                    border: "none",
+                    outline: "none",
+                    padding: "0 14px",
+                    fontSize: "0.875rem",
+                    color: "transparent",
+                    caretColor: "#fff",
+                  }}
+                  placeholder=""
                 />
-              )}
-            />
-            <Button type="submit" variant="contained" startIcon={<AddIcon />} sx={{ bgcolor: "#67e8f9", color: "#0f0f0f", "&:hover": { bgcolor: "#22d3ee" } }}>
+                {playerSuggestionsLoading && (
+                  <Typography component="span" variant="caption" sx={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", color: "text.secondary" }}>
+                    …
+                  </Typography>
+                )}
+              </Box>
+              {typeof document !== "undefined" &&
+                dropdownRect &&
+                createPortal(
+                  <ul
+                    className="list-none fixed max-h-48 overflow-auto rounded-md border border-cyan-500/30 bg-black/95 shadow-xl"
+                    style={{
+                      top: dropdownRect.top,
+                      left: dropdownRect.left,
+                      width: dropdownRect.width,
+                      zIndex: 1300,
+                    }}
+                  >
+                    {playerSuggestions.map((name, i) => (
+                      <li key={name}>
+                        <button
+                          type="button"
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            setNewName(name);
+                            setPlayerSuggestions([]);
+                            playerInputRef.current?.focus();
+                          }}
+                          className={`w-full text-left px-3 py-2 text-sm transition-colors ${i === playerSuggestionsIndex ? "bg-cyan-500/25 text-cyan-200" : "text-neutral-200 hover:bg-cyan-500/10"}`}
+                        >
+                          {capitalizeFirst(name)}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>,
+                  document.body
+                )}
+            </Box>
+            <Button
+              type="submit"
+              variant="contained"
+              startIcon={<AddIcon />}
+              disabled={players.length >= maxPlayers}
+              sx={{ bgcolor: "#67e8f9", color: "#0f0f0f", "&:hover": { bgcolor: "#22d3ee" } }}
+            >
               Add player
             </Button>
+            {addPlayerError && (
+              <Typography variant="caption" color="error" sx={{ alignSelf: "center" }}>
+                {addPlayerError}
+              </Typography>
+            )}
           </form>
         </CardContent>
       </Card>
 
       <Card sx={{ mb: 4, border: "1px solid", borderColor: "divider" }}>
         <CardContent sx={{ py: 2, "&:last-child": { pb: 2 } }}>
-          <div className="flex justify-between items-center mb-2">
+          <div className="flex items-center gap-2 mb-2">
             <Typography variant="subtitle1" fontWeight={600}>
-              Players ({players.length})
+              Players ({players.length} / {maxPlayers})
             </Typography>
+            {players.length > maxPlayers && (
+              <Typography variant="caption" color="error" sx={{ alignSelf: "center" }}>
+                {selectedGameConfig?.label} allows max {maxPlayers}. Remove {players.length - maxPlayers} to continue.
+              </Typography>
+            )}
+            <Tooltip
+              title="Average rating is the rating given to each player on average"
+              placement="top"
+              arrow
+              slotProps={{ tooltip: { sx: { textAlign: "center" } } }}
+            >
+              <IconButton size="small" sx={{ p: 0.25, color: "rgba(255,255,255,0.95)" }} aria-label="How is avg rating calculated?">
+                <InfoOutlinedIcon sx={{ fontSize: 22 }} />
+              </IconButton>
+            </Tooltip>
+            <Box sx={{ flex: 1, minWidth: 0 }} />
             <Button
               size="small"
               variant="outlined"
@@ -866,29 +1108,41 @@ export default function TeamBuilderPage() {
             </Button>
           </div>
 
-          {isOdd && (
-            <Typography variant="body2" sx={{ mb: 1, color: "#a3a3a3" }}>
-              Odd number of players — one team will have an extra member.
-            </Typography>
-          )}
-
           <div className="space-y-1">
-            {players.map((p) => (
+            {players.map((p) => {
+              const playerKey = p.name.trim().toLowerCase();
+              const avgRating = playerKey ? averageRatingsByPlayer[playerKey] : undefined;
+              return (
               <div
                 key={p.id}
                 className="flex items-center gap-2 py-1 px-2 rounded bg-cyan-500/5 border border-cyan-500/20"
               >
-                <TextField
-                  value={p.name}
-                  onChange={(e) => handleNameChange(p.id, e.target.value)}
-                  size="small"
-                  sx={{
-                    flex: 1,
-                    minWidth: 100,
-                    "& .MuiInputBase-root": { height: 32 },
-                    "& .MuiInputBase-input": { py: 0.5, fontSize: "0.875rem" },
-                  }}
-                />
+                <Box sx={{ width: 700, flexShrink: 0, display: "flex", alignItems: "center", gap: 1 }}>
+                  <TextField
+                    value={p.name}
+                    onChange={(e) => handleNameChange(p.id, e.target.value)}
+                    size="small"
+                    sx={{
+                      flex: 1,
+                      minWidth: 0,
+                      "& .MuiInputBase-root": { height: 32 },
+                      "& .MuiInputBase-input": { py: 0.5, fontSize: "0.875rem" },
+                    }}
+                  />
+                  <Box
+                    sx={{
+                      width: 56,
+                      flexShrink: 0,
+                      textAlign: "right",
+                      fontVariantNumeric: "tabular-nums",
+                      fontSize: "0.75rem",
+                      color: "rgba(255,255,255,0.6)",
+                      letterSpacing: "0.02em",
+                    }}
+                  >
+                    {avgRating != null ? `avg ${Number(avgRating).toFixed(1)}` : ""}
+                  </Box>
+                </Box>
                 <div className="flex items-center gap-1 flex-1 max-w-[180px] min-w-[120px]">
                   <Slider
                     value={p.rating}
@@ -908,7 +1162,8 @@ export default function TeamBuilderPage() {
                   <DeleteIcon sx={{ fontSize: 18 }} />
                 </IconButton>
               </div>
-            ))}
+            );
+            })}
           </div>
         </CardContent>
       </Card>
@@ -919,6 +1174,7 @@ export default function TeamBuilderPage() {
             variant="outlined"
             startIcon={<ShuffleIcon />}
             onClick={refillTeams}
+            disabled={players.length > maxPlayers}
             sx={{
               borderColor: "rgba(103,232,249,0.5)",
               color: "#67e8f9",
@@ -931,7 +1187,7 @@ export default function TeamBuilderPage() {
             <>
               <Button
                 variant="contained"
-                disabled={creatingGame || hasActiveSharedGame}
+                disabled={creatingGame || hasActiveSharedGame || players.length > maxPlayers}
                 onClick={handleStartGame}
                 sx={{
                   bgcolor: hasActiveSharedGame ? "rgba(255,255,255,0.2)" : "rgba(249,168,212,0.9)",
