@@ -25,15 +25,31 @@ async function fetchLeaderboard(
   };
 }
 
-function computeStats(scores: (number | null)[]) {
+function computeStats(scores: (number | null)[], gameType: string) {
+  if (gameType === "sc") {
+    const placementScores = scores.filter((s) => s !== null && s >= 1 && s <= 4) as number[];
+    const games = placementScores.length;
+    const avgPlace =
+      games > 0
+        ? Math.round((placementScores.reduce((a, b) => a + b, 0) / games) * 10) / 10
+        : 0;
+    return { wins: 0, losses: 0, games, winrate: 0, avgPlace, isSc: true };
+  }
   const wins = scores.filter((s) => s === 1).length;
   const losses = scores.filter((s) => s === 0).length;
   const games = wins + losses;
   const winrate = games > 0 ? Math.round((wins / games) * 100) : 0;
-  return { wins, losses, games, winrate };
+  return { wins, losses, games, winrate, avgPlace: 0, isSc: false };
 }
 
-type RowWithStats = PlayerRow & { wins: number; losses: number; games: number; winrate: number };
+type RowWithStats = PlayerRow & {
+  wins: number;
+  losses: number;
+  games: number;
+  winrate: number;
+  avgPlace: number;
+  isSc: boolean;
+};
 
 export function LeaderboardClient({
   gameType,
@@ -60,16 +76,24 @@ export function LeaderboardClient({
       const latest = latestSeason !== useSeason ? await fetchLeaderboard(gameType, latestSeason) : data;
       const list = (latest.players ?? []).map((p) => ({
         ...p,
-        ...computeStats(p.scores),
+        ...computeStats(p.scores, gameType),
       })) as RowWithStats[];
-      list.sort((a, b) => b.wins - a.wins || (a.playerName || "").localeCompare(b.playerName || ""));
+      list.sort((a, b) =>
+        gameType === "sc"
+          ? (a.avgPlace || 999) - (b.avgPlace || 999) || (a.playerName || "").localeCompare(b.playerName || "")
+          : b.wins - a.wins || (a.playerName || "").localeCompare(b.playerName || "")
+      );
       setPlayers(list);
     } else {
       const list = (data.players ?? []).map((p) => ({
         ...p,
-        ...computeStats(p.scores),
+        ...computeStats(p.scores, gameType),
       })) as RowWithStats[];
-      list.sort((a, b) => b.wins - a.wins || (a.playerName || "").localeCompare(b.playerName || ""));
+      list.sort((a, b) =>
+        gameType === "sc"
+          ? (a.avgPlace || 999) - (b.avgPlace || 999) || (a.playerName || "").localeCompare(b.playerName || "")
+          : b.wins - a.wins || (a.playerName || "").localeCompare(b.playerName || "")
+      );
       setPlayers(list);
     }
     setLoading(false);
@@ -126,12 +150,13 @@ export function LeaderboardClient({
           ) : (
             players.map((p, index) => {
               const rank = index + 1;
+              const isSc = gameType === "sc";
               return (
                 <Box
                   key={p.id}
                   sx={{
                     display: "grid",
-                    gridTemplateColumns: "56px 1fr 72px 72px 80px",
+                    gridTemplateColumns: isSc ? "56px 1fr 80px 80px" : "56px 1fr 72px 72px 80px",
                     gap: 2,
                     alignItems: "center",
                     py: 1.5,
@@ -158,15 +183,28 @@ export function LeaderboardClient({
                   <Typography variant="body1" fontWeight={600} sx={{ color: "text.primary" }} noWrap>
                     {p.playerName || "—"}
                   </Typography>
-                  <Typography variant="body2" sx={{ color: "#86efac", fontVariantNumeric: "tabular-nums" }}>
-                    {p.wins} W
-                  </Typography>
-                  <Typography variant="body2" sx={{ color: "#fca5a5", fontVariantNumeric: "tabular-nums" }}>
-                    {p.losses} L
-                  </Typography>
-                  <Typography variant="body2" fontWeight={600} sx={{ color: "#67e8f9", fontVariantNumeric: "tabular-nums" }}>
-                    {p.winrate}%
-                  </Typography>
+                  {isSc ? (
+                    <>
+                      <Typography variant="body2" sx={{ color: "text.secondary", fontVariantNumeric: "tabular-nums" }}>
+                        {p.games} games
+                      </Typography>
+                      <Typography variant="body2" fontWeight={600} sx={{ color: "#67e8f9", fontVariantNumeric: "tabular-nums" }}>
+                        Avg {p.avgPlace || "—"}
+                      </Typography>
+                    </>
+                  ) : (
+                    <>
+                      <Typography variant="body2" sx={{ color: "#86efac", fontVariantNumeric: "tabular-nums" }}>
+                        {p.wins} W
+                      </Typography>
+                      <Typography variant="body2" sx={{ color: "#fca5a5", fontVariantNumeric: "tabular-nums" }}>
+                        {p.losses} L
+                      </Typography>
+                      <Typography variant="body2" fontWeight={600} sx={{ color: "#67e8f9", fontVariantNumeric: "tabular-nums" }}>
+                        {p.winrate}%
+                      </Typography>
+                    </>
+                  )}
                 </Box>
               );
             })

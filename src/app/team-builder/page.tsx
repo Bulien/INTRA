@@ -21,6 +21,10 @@ import {
   Tooltip,
   ToggleButtonGroup,
   ToggleButton,
+  Select,
+  MenuItem,
+  FormControl,
+  InputLabel,
 } from "@mui/material";
 import DeleteIcon from "@mui/icons-material/Delete";
 import AddIcon from "@mui/icons-material/Add";
@@ -195,12 +199,14 @@ async function createSharedGame(
 
 async function submitSharedGameResult(
   gameId: string,
-  winner: "yin" | "yang"
+  winnerOrPlacements: "yin" | "yang" | { playerName: string; placement: number }[]
 ): Promise<{ ok: boolean; error?: string }> {
+  const isPlacements = Array.isArray(winnerOrPlacements);
+  const body = isPlacements ? { placements: winnerOrPlacements } : { winner: winnerOrPlacements };
   const res = await fetch(`/api/team-builder/games/${gameId}/result`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ winner }),
+    body: JSON.stringify(body),
   });
   const data = res.ok ? undefined : await res.json().catch(() => ({}));
   return { ok: res.ok, error: (data as { error?: string })?.error ?? (res.ok ? undefined : "Submit failed") };
@@ -228,6 +234,7 @@ export default function TeamBuilderPage() {
   const [finishingGameId, setFinishingGameId] = useState<string | null>(null);
   const [canValidate, setCanValidate] = useState(false);
   const [validateUserCount, setValidateUserCount] = useState(0);
+  const [minRequiredByGame, setMinRequiredByGame] = useState<Record<string, number>>({ lol: 10, ow: 10, sc: 3, battlerite: 10 });
   const [playerSuggestions, setPlayerSuggestions] = useState<string[]>([]);
   const [playerSuggestionsLoading, setPlayerSuggestionsLoading] = useState(false);
   const [playerSuggestionsIndex, setPlayerSuggestionsIndex] = useState(0);
@@ -235,6 +242,9 @@ export default function TeamBuilderPage() {
   const [addPlayerError, setAddPlayerError] = useState<string | null>(null);
   const [dropdownRect, setDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null);
   const [averageRatingsByPlayer, setAverageRatingsByPlayer] = useState<Record<string, number>>({});
+  const [scPlacementsGame, setScPlacementsGame] = useState<SharedGame | null>(null);
+  const [scPlacements, setScPlacements] = useState<Record<string, number>>({});
+  const [scPlacementsError, setScPlacementsError] = useState<string | null>(null);
   const playerInputRef = useRef<HTMLInputElement>(null);
   const playerInputContainerRef = useRef<HTMLDivElement>(null);
 
@@ -257,12 +267,13 @@ export default function TeamBuilderPage() {
 
   const fetchCanValidate = useCallback(() => {
     fetch("/api/team-builder/can-validate", { cache: "no-store" })
-      .then((res) => res.ok ? res.json() : { canValidate: false, userCount: 0 })
+      .then((res) => res.ok ? res.json() : { canValidate: false, userCount: 0, minRequiredByGame: {} })
       .then((data) => {
         setCanValidate(Boolean(data.canValidate));
         setValidateUserCount(Number(data.userCount) || 0);
+        setMinRequiredByGame(data.minRequiredByGame ?? { lol: 10, ow: 10, sc: 3, battlerite: 10 });
       })
-      .catch(() => { setCanValidate(false); setValidateUserCount(0); });
+      .catch(() => { setCanValidate(false); setValidateUserCount(0); setMinRequiredByGame({}); });
   }, []);
 
   useEffect(() => {
@@ -497,6 +508,52 @@ export default function TeamBuilderPage() {
     [selectedGame]
   );
 
+  const openScPlacementsDialog = useCallback((game: SharedGame) => {
+    const minRequired = minRequiredByGame[game.gameType] ?? 10;
+    if (validateUserCount < minRequired) {
+      setResultBlockedMessage(`Result submission requires at least ${minRequired} registered players (${validateUserCount} currently).`);
+      setTimeout(() => setResultBlockedMessage(null), 5000);
+      return;
+    }
+    const regSet = new Set((registeredUserNames ?? []).map((n) => String(n).trim().toLowerCase()));
+    const registeredInGame = [...game.teamA, ...game.teamB].filter(
+      (p) => (p.name ?? "").trim() !== "" && regSet.has((p.name ?? "").trim().toLowerCase())
+    ).length;
+    if (registeredInGame < 3) {
+      setResultBlockedMessage("At least 3 players in the game must have an account to submit results.");
+      setTimeout(() => setResultBlockedMessage(null), 5000);
+      return;
+    }
+    setScPlacementsError(null);
+    setScPlacementsGame(game);
+    setScPlacements({});
+  }, [minRequiredByGame, validateUserCount, registeredUserNames]);
+
+  const handleSubmitScPlacements = useCallback(async () => {
+    if (!scPlacementsGame) return;
+    const allPlayers = [...scPlacementsGame.teamA, ...scPlacementsGame.teamB].map((p) => (p.name ?? "").trim()).filter(Boolean);
+    const placements = allPlayers.map((name) => ({ playerName: name, placement: scPlacements[name] }));
+    const used = new Set(placements.map((p) => p.placement));
+    if (placements.some((p) => !p.placement || p.placement < 1 || p.placement > 4)) {
+      setScPlacementsError("Each player must have a placement from 1 to 4.");
+      return;
+    }
+    if (used.size !== 4 || !used.has(1) || !used.has(2) || !used.has(3) || !used.has(4)) {
+      setScPlacementsError("Placements must be 1, 2, 3, and 4 (each used exactly once).");
+      return;
+    }
+    setScPlacementsError(null);
+    const { ok, error } = await submitSharedGameResult(scPlacementsGame.id, placements);
+    if (ok) {
+      setActiveSharedGames((prev) => prev.filter((g) => g.id !== scPlacementsGame.id));
+      window.dispatchEvent(new CustomEvent("rankingUpdated", { detail: { gameType: "sc" } }));
+      setScPlacementsGame(null);
+      setScPlacements({});
+    } else {
+      setScPlacementsError(error ?? "Submit failed");
+    }
+  }, [scPlacementsGame, scPlacements]);
+
   const handleFinishGame = useCallback(async (gameId: string) => {
     setFinishingGameId(gameId);
     const { ok, error } = await finishSharedGame(gameId);
@@ -541,13 +598,15 @@ export default function TeamBuilderPage() {
 
   const [resultBlockedMessage, setResultBlockedMessage] = useState<string | null>(null);
   const openConfirmSharedResult = (gameId: string, winner: "yin" | "yang") => {
-    if (!canValidate) {
-      setResultBlockedMessage(`Result submission requires at least 10 registered players (${validateUserCount} currently).`);
+    const game = activeSharedGames.find((g) => g.id === gameId);
+    const minRequired = game ? (minRequiredByGame[game.gameType] ?? 10) : 10;
+    if (validateUserCount < minRequired) {
+      setResultBlockedMessage(`Result submission requires at least ${minRequired} registered players (${validateUserCount} currently).`);
       setTimeout(() => setResultBlockedMessage(null), 5000);
       return;
     }
-    const game = activeSharedGames.find((g) => g.id === gameId);
-    if (game) {
+    if (!game) return;
+    {
       const regSet = new Set((registeredUserNames ?? []).map((n) => String(n).trim().toLowerCase()));
       const allReg = [...game.teamA, ...game.teamB].every(
         (p) => (p.name ?? "").trim() === "" || regSet.has((p.name ?? "").trim().toLowerCase())
@@ -573,6 +632,12 @@ export default function TeamBuilderPage() {
     setConfirmWinTeam(null);
     setConfirmSharedGameId(null);
     setSubmitSharedError(null);
+  };
+
+  const closeScPlacementsDialog = () => {
+    setScPlacementsGame(null);
+    setScPlacements({});
+    setScPlacementsError(null);
   };
 
   const onConfirmWin = useCallback(async () => {
@@ -694,7 +759,13 @@ export default function TeamBuilderPage() {
             const allPlayersRegistered = [...game.teamA, ...game.teamB].every(
               (p) => (p.name ?? "").trim() === "" || registeredNorm.has((p.name ?? "").trim().toLowerCase())
             );
-            const canSubmitThisGame = canValidate && allPlayersRegistered;
+            const registeredInGame = [...game.teamA, ...game.teamB].filter(
+              (p) => (p.name ?? "").trim() !== "" && registeredNorm.has((p.name ?? "").trim().toLowerCase())
+            ).length;
+            const minRequiredThisGame = minRequiredByGame[game.gameType] ?? 10;
+            const canSubmitThisGame =
+              validateUserCount >= minRequiredThisGame &&
+              (game.gameType === "sc" ? registeredInGame >= 3 : allPlayersRegistered);
             const gameLabel = GAMES.find((g) => g.value === game.gameType)?.label ?? game.gameType;
             const teamAScore = game.teamA.reduce((s, p) => s + (p.rating ?? 0), 0);
             const teamBScore = game.teamB.reduce((s, p) => s + (p.rating ?? 0), 0);
@@ -732,12 +803,12 @@ export default function TeamBuilderPage() {
                       >
                         Team Yin
                       </Typography>
-                      <Typography variant="subtitle1" sx={{ color: "#67e8f9", fontWeight: 700, mb: 1 }}>— {teamAScore} pts</Typography>
+                      <Typography variant="subtitle1" sx={{ color: "#67e8f9", fontWeight: 700, mb: 1 }}>{game.gameType === "sc" ? "" : `— ${teamAScore} pts`}</Typography>
                       <ul className="list-none p-0 m-0 space-y-1">
                         {game.teamA.map((p) => (
                           <li key={p.id} className="flex justify-between text-sm">
                             <span className="text-neutral-200">{p.name}</span>
-                            <span className="font-semibold text-cyan-200">{p.rating ?? "—"}</span>
+                            {game.gameType !== "sc" && <span className="font-semibold text-cyan-200">{p.rating ?? "—"}</span>}
                           </li>
                         ))}
                       </ul>
@@ -761,12 +832,12 @@ export default function TeamBuilderPage() {
                       >
                         Team Yang
                       </Typography>
-                      <Typography variant="subtitle1" sx={{ color: "#f9a8d4", fontWeight: 700, mb: 1 }}>— {teamBScore} pts</Typography>
+                      <Typography variant="subtitle1" sx={{ color: "#f9a8d4", fontWeight: 700, mb: 1 }}>{game.gameType === "sc" ? "" : `— ${teamBScore} pts`}</Typography>
                       <ul className="list-none p-0 m-0 space-y-1">
                         {game.teamB.map((p) => (
                           <li key={p.id} className="flex justify-between text-sm">
                             <span className="text-neutral-200">{p.name}</span>
-                            <span className="font-semibold text-pink-200">{p.rating ?? "—"}</span>
+                            {game.gameType !== "sc" && <span className="font-semibold text-pink-200">{p.rating ?? "—"}</span>}
                           </li>
                         ))}
                       </ul>
@@ -774,13 +845,12 @@ export default function TeamBuilderPage() {
                   </div>
                   <div className="flex gap-2">
                     {canSubmitThisGame ? (
-                      <>
+                      game.gameType === "sc" ? (
                         <Button
                           fullWidth
                           variant="contained"
                           size="large"
-                          disabled={!canYin}
-                          onClick={() => openConfirmSharedResult(game.id, "yin")}
+                          onClick={() => openScPlacementsDialog(game)}
                           sx={{
                             py: 1.5,
                             bgcolor: "#67e8f9",
@@ -789,31 +859,52 @@ export default function TeamBuilderPage() {
                             "&:hover": { bgcolor: "#22d3ee" },
                           }}
                         >
-                          Yin Won
+                          Submit placements (1st–4th)
                         </Button>
-                        <Button
-                          fullWidth
-                          variant="contained"
-                          size="large"
-                          disabled={!canYang}
-                          onClick={() => openConfirmSharedResult(game.id, "yang")}
-                          sx={{
-                            py: 1.5,
-                            bgcolor: "#f9a8d4",
-                            color: "#0f0f0f",
-                            fontWeight: 700,
-                            "&:hover": { bgcolor: "#f472b6" },
-                          }}
-                        >
-                          Yang Won
-                        </Button>
-                      </>
+                      ) : (
+                        <>
+                          <Button
+                            fullWidth
+                            variant="contained"
+                            size="large"
+                            disabled={!canYin}
+                            onClick={() => openConfirmSharedResult(game.id, "yin")}
+                            sx={{
+                              py: 1.5,
+                              bgcolor: "#67e8f9",
+                              color: "#0f0f0f",
+                              fontWeight: 700,
+                              "&:hover": { bgcolor: "#22d3ee" },
+                            }}
+                          >
+                            Yin Won
+                          </Button>
+                          <Button
+                            fullWidth
+                            variant="contained"
+                            size="large"
+                            disabled={!canYang}
+                            onClick={() => openConfirmSharedResult(game.id, "yang")}
+                            sx={{
+                              py: 1.5,
+                              bgcolor: "#f9a8d4",
+                              color: "#0f0f0f",
+                              fontWeight: 700,
+                              "&:hover": { bgcolor: "#f472b6" },
+                            }}
+                          >
+                            Yang Won
+                          </Button>
+                        </>
+                      )
                     ) : (
                       <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5, width: "100%" }}>
                         <Typography variant="body2" color="text.secondary" sx={{ textAlign: "center" }}>
-                          {!canValidate
-                            ? `Result submission requires at least 10 registered players (${validateUserCount} currently).`
-                            : "All players in the game must have an account to submit results."}
+                          {validateUserCount < minRequiredThisGame
+                            ? `Result submission requires at least ${minRequiredThisGame} registered players (${validateUserCount} currently).`
+                            : game.gameType === "sc"
+                              ? "At least 3 players in the game must have an account to submit results."
+                              : "All players in the game must have an account to submit results."}
                         </Typography>
                         <Button
                           variant="outlined"
@@ -1086,16 +1177,18 @@ export default function TeamBuilderPage() {
                 {selectedGameConfig?.label} allows max {maxPlayers}. Remove {players.length - maxPlayers} to continue.
               </Typography>
             )}
-            <Tooltip
-              title="Average rating is the rating given to each player on average"
-              placement="top"
-              arrow
-              slotProps={{ tooltip: { sx: { textAlign: "center" } } }}
-            >
-              <IconButton size="small" sx={{ p: 0.25, color: "rgba(255,255,255,0.95)" }} aria-label="How is avg rating calculated?">
-                <InfoOutlinedIcon sx={{ fontSize: 22 }} />
-              </IconButton>
-            </Tooltip>
+            {selectedGame !== "sc" && (
+              <Tooltip
+                title="Average rating is the rating given to each player on average"
+                placement="top"
+                arrow
+                slotProps={{ tooltip: { sx: { textAlign: "center" } } }}
+              >
+                <IconButton size="small" sx={{ p: 0.25, color: "rgba(255,255,255,0.95)" }} aria-label="How is avg rating calculated?">
+                  <InfoOutlinedIcon sx={{ fontSize: 22 }} />
+                </IconButton>
+              </Tooltip>
+            )}
             <Box sx={{ flex: 1, minWidth: 0 }} />
             <Button
               size="small"
@@ -1129,35 +1222,39 @@ export default function TeamBuilderPage() {
                       "& .MuiInputBase-input": { py: 0.5, fontSize: "0.875rem" },
                     }}
                   />
-                  <Box
-                    sx={{
-                      width: 56,
-                      flexShrink: 0,
-                      textAlign: "right",
-                      fontVariantNumeric: "tabular-nums",
-                      fontSize: "0.75rem",
-                      color: "rgba(255,255,255,0.6)",
-                      letterSpacing: "0.02em",
-                    }}
-                  >
-                    {avgRating != null ? `avg ${Number(avgRating).toFixed(1)}` : ""}
-                  </Box>
+                  {selectedGame !== "sc" && (
+                    <Box
+                      sx={{
+                        width: 56,
+                        flexShrink: 0,
+                        textAlign: "right",
+                        fontVariantNumeric: "tabular-nums",
+                        fontSize: "0.75rem",
+                        color: "rgba(255,255,255,0.6)",
+                        letterSpacing: "0.02em",
+                      }}
+                    >
+                      {avgRating != null ? `avg ${Number(avgRating).toFixed(1)}` : ""}
+                    </Box>
+                  )}
                 </Box>
-                <div className="flex items-center gap-1 flex-1 max-w-[180px] min-w-[120px]">
-                  <Slider
-                    value={p.rating}
-                    onChange={(_, v) => setRating(p.id, v as number)}
-                    min={1}
-                    max={10}
-                    step={1}
-                    valueLabelDisplay="auto"
-                    valueLabelFormat={(v) => v}
-                    sx={{ height: 4, "& .MuiSlider-thumb": { width: 14, height: 14 } }}
-                  />
-                  <Typography variant="body2" fontWeight={600} sx={{ minWidth: 20, fontSize: "0.8rem" }}>
-                    {p.rating}
-                  </Typography>
-                </div>
+                {selectedGame !== "sc" && (
+                  <div className="flex items-center gap-1 flex-1 max-w-[180px] min-w-[120px]">
+                    <Slider
+                      value={p.rating}
+                      onChange={(_, v) => setRating(p.id, v as number)}
+                      min={1}
+                      max={10}
+                      step={1}
+                      valueLabelDisplay="auto"
+                      valueLabelFormat={(v) => v}
+                      sx={{ height: 4, "& .MuiSlider-thumb": { width: 14, height: 14 } }}
+                    />
+                    <Typography variant="body2" fontWeight={600} sx={{ minWidth: 20, fontSize: "0.8rem" }}>
+                      {p.rating}
+                    </Typography>
+                  </div>
+                )}
                 <IconButton size="small" onClick={() => removePlayer(p.id)} color="error" sx={{ p: 0.5 }}>
                   <DeleteIcon sx={{ fontSize: 18 }} />
                 </IconButton>
@@ -1242,7 +1339,13 @@ export default function TeamBuilderPage() {
                 const allPlayersRegistered2 = [...game.teamA, ...game.teamB].every(
                   (p) => (p.name ?? "").trim() === "" || registeredNorm2.has((p.name ?? "").trim().toLowerCase())
                 );
-                const canSubmitThisGame2 = canValidate && allPlayersRegistered2;
+                const registeredInGame2 = [...game.teamA, ...game.teamB].filter(
+                  (p) => (p.name ?? "").trim() !== "" && registeredNorm2.has((p.name ?? "").trim().toLowerCase())
+                ).length;
+                const minRequiredThisGame2 = minRequiredByGame[game.gameType] ?? 10;
+                const canSubmitThisGame2 =
+                  validateUserCount >= minRequiredThisGame2 &&
+                  (game.gameType === "sc" ? registeredInGame2 >= 3 : allPlayersRegistered2);
                 const gameLabel = GAMES.find((g) => g.value === game.gameType)?.label ?? game.gameType;
                 const teamAScore = game.teamA.reduce((s, p) => s + (p.rating ?? 0), 0);
                 const teamBScore = game.teamB.reduce((s, p) => s + (p.rating ?? 0), 0);
@@ -1280,12 +1383,12 @@ export default function TeamBuilderPage() {
                           >
                             Team Yin
                           </Typography>
-                          <Typography variant="subtitle1" sx={{ color: "#67e8f9", fontWeight: 700, mb: 1 }}>— {teamAScore} pts</Typography>
+                          <Typography variant="subtitle1" sx={{ color: "#67e8f9", fontWeight: 700, mb: 1 }}>{game.gameType === "sc" ? "" : `— ${teamAScore} pts`}</Typography>
                           <ul className="list-none p-0 m-0 space-y-1 text-neutral-300">
                             {game.teamA.map((p) => (
                               <li key={p.id} className="flex justify-between text-base">
                                 <span>{p.name}</span>
-                                <span className="font-semibold text-cyan-200">{p.rating ?? "—"}</span>
+                                {game.gameType !== "sc" && <span className="font-semibold text-cyan-200">{p.rating ?? "—"}</span>}
                               </li>
                             ))}
                           </ul>
@@ -1309,12 +1412,12 @@ export default function TeamBuilderPage() {
                           >
                             Team Yang
                           </Typography>
-                          <Typography variant="subtitle1" sx={{ color: "#f9a8d4", fontWeight: 700, mb: 1 }}>— {teamBScore} pts</Typography>
+                          <Typography variant="subtitle1" sx={{ color: "#f9a8d4", fontWeight: 700, mb: 1 }}>{game.gameType === "sc" ? "" : `— ${teamBScore} pts`}</Typography>
                           <ul className="list-none p-0 m-0 space-y-1 text-neutral-300">
                             {game.teamB.map((p) => (
                               <li key={p.id} className="flex justify-between text-base">
                                 <span>{p.name}</span>
-                                <span className="font-semibold text-pink-200">{p.rating ?? "—"}</span>
+                                {game.gameType !== "sc" && <span className="font-semibold text-pink-200">{p.rating ?? "—"}</span>}
                               </li>
                             ))}
                           </ul>
@@ -1322,14 +1425,13 @@ export default function TeamBuilderPage() {
                       </div>
                       <div className="flex gap-2">
                         {canSubmitThisGame2 ? (
-                          <>
+                          game.gameType === "sc" ? (
                             <Button
+                              fullWidth
                               size="medium"
                               variant="contained"
-                              disabled={!canYin}
-                              onClick={() => openConfirmSharedResult(game.id, "yin")}
+                              onClick={() => openScPlacementsDialog(game)}
                               sx={{
-                                flex: 1,
                                 py: 1.5,
                                 bgcolor: "#67e8f9",
                                 color: "#0f0f0f",
@@ -1337,31 +1439,52 @@ export default function TeamBuilderPage() {
                                 "&:hover": { bgcolor: "#22d3ee" },
                               }}
                             >
-                              Yin Won
+                              Submit placements (1st–4th)
                             </Button>
-                            <Button
-                              size="medium"
-                              variant="contained"
-                              disabled={!canYang}
-                              onClick={() => openConfirmSharedResult(game.id, "yang")}
-                              sx={{
-                                flex: 1,
-                                py: 1.5,
-                                bgcolor: "#f9a8d4",
-                                color: "#0f0f0f",
-                                fontWeight: 700,
-                                "&:hover": { bgcolor: "#f472b6" },
-                              }}
-                            >
-                              Yang Won
-                            </Button>
-                          </>
+                          ) : (
+                            <>
+                              <Button
+                                size="medium"
+                                variant="contained"
+                                disabled={!canYin}
+                                onClick={() => openConfirmSharedResult(game.id, "yin")}
+                                sx={{
+                                  flex: 1,
+                                  py: 1.5,
+                                  bgcolor: "#67e8f9",
+                                  color: "#0f0f0f",
+                                  fontWeight: 700,
+                                  "&:hover": { bgcolor: "#22d3ee" },
+                                }}
+                              >
+                                Yin Won
+                              </Button>
+                              <Button
+                                size="medium"
+                                variant="contained"
+                                disabled={!canYang}
+                                onClick={() => openConfirmSharedResult(game.id, "yang")}
+                                sx={{
+                                  flex: 1,
+                                  py: 1.5,
+                                  bgcolor: "#f9a8d4",
+                                  color: "#0f0f0f",
+                                  fontWeight: 700,
+                                  "&:hover": { bgcolor: "#f472b6" },
+                                }}
+                              >
+                                Yang Won
+                              </Button>
+                            </>
+                          )
                         ) : (
                           <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5, flex: 1 }}>
                             <Typography variant="body2" color="text.secondary" sx={{ textAlign: "center" }}>
-                              {!canValidate
-                                ? `Result submission requires at least 10 registered players (${validateUserCount} currently).`
-                                : "All players in the game must have an account to submit results."}
+                              {validateUserCount < minRequiredThisGame2
+                                ? `Result submission requires at least ${minRequiredThisGame2} registered players (${validateUserCount} currently).`
+                                : game.gameType === "sc"
+                                  ? "At least 3 players in the game must have an account to submit results."
+                                  : "All players in the game must have an account to submit results."}
                             </Typography>
                             <Button
                               variant="outlined"
@@ -1393,7 +1516,7 @@ export default function TeamBuilderPage() {
           <CardContent sx={{ py: 2 }}>
             <div className="flex justify-between items-center mb-2">
               <Typography variant="subtitle1" fontWeight={600} sx={{ color: "#67e8f9" }}>
-                Yin — {result.teamAScore}
+                Yin{selectedGame !== "sc" ? ` — ${result.teamAScore}` : ""}
               </Typography>
             </div>
             <Divider sx={{ my: 1.5, borderColor: "rgba(103,232,249,0.2)" }} />
@@ -1401,7 +1524,7 @@ export default function TeamBuilderPage() {
               {result.teamA.map((p) => (
                 <li key={p.id} className="flex justify-between text-sm">
                   <span>{p.name}</span>
-                  <span className="font-medium">{p.rating}</span>
+                  {selectedGame !== "sc" && <span className="font-medium">{p.rating}</span>}
                 </li>
               ))}
             </ul>
@@ -1411,7 +1534,7 @@ export default function TeamBuilderPage() {
           <CardContent sx={{ py: 2 }}>
             <div className="flex justify-between items-center mb-2">
               <Typography variant="subtitle1" fontWeight={600} sx={{ color: "#f9a8d4" }}>
-                Yang — {result.teamBScore}
+                Yang{selectedGame !== "sc" ? ` — ${result.teamBScore}` : ""}
               </Typography>
             </div>
             <Divider sx={{ my: 1.5, borderColor: "rgba(249,168,212,0.2)" }} />
@@ -1419,7 +1542,7 @@ export default function TeamBuilderPage() {
               {result.teamB.map((p) => (
                 <li key={p.id} className="flex justify-between text-sm">
                   <span>{p.name}</span>
-                  <span className="font-medium">{p.rating}</span>
+                  {selectedGame !== "sc" && <span className="font-medium">{p.rating}</span>}
                 </li>
               ))}
             </ul>
@@ -1475,6 +1598,88 @@ export default function TeamBuilderPage() {
             }}
           >
             Confirm
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(scPlacementsGame)}
+        onClose={closeScPlacementsDialog}
+        PaperProps={{
+          sx: {
+            position: "fixed",
+            top: "50%",
+            left: "50%",
+            transform: "translate(-50%, -50%)",
+            m: 0,
+            minWidth: 360,
+            bgcolor: "background.paper",
+            border: "1px solid rgba(255,255,255,0.12)",
+            borderRadius: 2,
+          },
+        }}
+      >
+        <DialogTitle sx={{ color: "text.primary" }}>
+          Survival Chaos — Placements (1st to 4th)
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Enter each player&apos;s placement. Use 1 for 1st, 2 for 2nd, 3 for 3rd, 4 for 4th. Each number 1–4 must be used exactly once.
+          </Typography>
+          {scPlacementsGame && (
+            <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+              {[...scPlacementsGame.teamA, ...scPlacementsGame.teamB]
+                .filter((p) => (p.name ?? "").trim())
+                .map((p) => {
+                  const name = (p.name ?? "").trim();
+                  return (
+                    <Box key={p.id} sx={{ display: "flex", alignItems: "center", gap: 2 }}>
+                      <Typography sx={{ flex: 1, color: "text.primary" }} noWrap>
+                        {name}
+                      </Typography>
+                      <FormControl size="small" sx={{ minWidth: 100 }}>
+                        <InputLabel>Place</InputLabel>
+                        <Select
+                          value={scPlacements[name] ?? ""}
+                          label="Place"
+                          onChange={(e) =>
+                            setScPlacements((prev) => ({
+                              ...prev,
+                              [name]: Number(e.target.value) as number,
+                            }))
+                          }
+                        >
+                          <MenuItem value={1}>1st</MenuItem>
+                          <MenuItem value={2}>2nd</MenuItem>
+                          <MenuItem value={3}>3rd</MenuItem>
+                          <MenuItem value={4}>4th</MenuItem>
+                        </Select>
+                      </FormControl>
+                    </Box>
+                  );
+                })}
+            </Box>
+          )}
+          {scPlacementsError && (
+            <Typography color="error" sx={{ mt: 2, fontSize: "0.875rem" }}>
+              {scPlacementsError}
+            </Typography>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={closeScPlacementsDialog} color="inherit">
+            Cancel
+          </Button>
+          <Button
+            onClick={handleSubmitScPlacements}
+            variant="contained"
+            sx={{
+              bgcolor: "#67e8f9",
+              color: "#0f0f0f",
+              "&:hover": { bgcolor: "#22d3ee" },
+            }}
+          >
+            Submit placements
           </Button>
         </DialogActions>
       </Dialog>

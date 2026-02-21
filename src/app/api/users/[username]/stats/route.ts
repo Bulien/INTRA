@@ -82,7 +82,7 @@ export async function GET(
       losses,
       winrate,
       label: GAME_LABELS[gameType] ?? gameType,
-      averageRating: avgByGame[gameType] ?? null,
+      averageRating: gameType === "sc" ? null : (avgByGame[gameType] ?? null),
     };
   }
 
