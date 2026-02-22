@@ -20,8 +20,6 @@ import {
   Slider,
   Divider,
   Tooltip,
-  ToggleButtonGroup,
-  ToggleButton,
   Select,
   MenuItem,
   FormControl,
@@ -221,6 +219,12 @@ async function finishSharedGame(gameId: string): Promise<{ ok: boolean; error?: 
   return { ok: res.ok, error: (data as { error?: string })?.error ?? (res.ok ? undefined : "Failed to finish game") };
 }
 
+async function cancelSharedGame(gameId: string): Promise<{ ok: boolean; error?: string }> {
+  const res = await fetch(`/api/team-builder/games/${gameId}/cancel`, { method: "POST" });
+  const data = res.ok ? undefined : await res.json().catch(() => ({}));
+  return { ok: res.ok, error: (data as { error?: string })?.error ?? (res.ok ? undefined : "Failed to cancel game") };
+}
+
 export default function TeamBuilderPage() {
   const [players, setPlayers] = useState<Player[]>([]);
   const [newName, setNewName] = useState("");
@@ -235,6 +239,7 @@ export default function TeamBuilderPage() {
   const [creatingGame, setCreatingGame] = useState(false);
   const [startGameError, setStartGameError] = useState<string | null>(null);
   const [finishingGameId, setFinishingGameId] = useState<string | null>(null);
+  const [cancellingGameId, setCancellingGameId] = useState<string | null>(null);
   const [canValidate, setCanValidate] = useState(false);
   const [validateUserCount, setValidateUserCount] = useState(0);
   const [minRequiredByGame, setMinRequiredByGame] = useState<Record<string, number>>({ lol: 6, ow: 6, sc: 3, battlerite: 6 });
@@ -264,6 +269,13 @@ export default function TeamBuilderPage() {
 
   useEffect(() => {
     setPlayers(loadTeamBuilderPlayers());
+  }, []);
+
+  useEffect(() => {
+    const cached = localStorage.getItem("team-builder-game-type");
+    if (cached && GAMES.some((g) => g.value === cached)) {
+      setSelectedGame(cached);
+    }
   }, []);
 
   useEffect(() => {
@@ -697,6 +709,18 @@ export default function TeamBuilderPage() {
     }
   }, []);
 
+  const handleCancelGame = useCallback(async (gameId: string) => {
+    setCancellingGameId(gameId);
+    const { ok, error } = await cancelSharedGame(gameId);
+    setCancellingGameId(null);
+    if (ok) {
+      setActiveSharedGames((prev) => prev.filter((g) => g.id !== gameId));
+    } else {
+      setResultBlockedMessage(error ?? "Failed to cancel game");
+      setTimeout(() => setResultBlockedMessage(null), 5000);
+    }
+  }, []);
+
   const handleTeamWin = useCallback(async (team: "yin" | "yang") => {
     const winningTeam = team === "yin" ? result.teamA : result.teamB;
     const losingTeam = team === "yin" ? result.teamB : result.teamA;
@@ -992,7 +1016,22 @@ export default function TeamBuilderPage() {
                       </ul>
                     </Box>
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 flex-wrap">
+                    {isCreator && (
+                      <Button
+                        size="medium"
+                        variant="outlined"
+                        disabled={cancellingGameId === game.id}
+                        onClick={() => handleCancelGame(game.id)}
+                        sx={{
+                          borderColor: "rgba(239,68,68,0.6)",
+                          color: "#fca5a5",
+                          "&:hover": { borderColor: "#ef4444", bgcolor: "rgba(239,68,68,0.1)" },
+                        }}
+                      >
+                        {cancellingGameId === game.id ? "Cancelling…" : "Cancel game"}
+                      </Button>
+                    )}
                     {canSubmitThisGame ? (
                       game.gameType === "sc" ? (
                         <Button
@@ -1119,7 +1158,7 @@ export default function TeamBuilderPage() {
             Team Builder
           </Typography>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-4 flex-wrap">
           <Typography
             variant="subtitle1"
             sx={{
@@ -1135,35 +1174,76 @@ export default function TeamBuilderPage() {
           >
             Season {maxSeason} (current)
           </Typography>
-          <Typography variant="subtitle1" sx={{ fontWeight: 600, color: "text.primary" }}>
-            Game
-          </Typography>
-          <ToggleButtonGroup
-            value={selectedGame}
-            exclusive
-            onChange={(_, value) => value != null && setSelectedGame(value)}
-            size="small"
-            sx={{
-              "& .MuiToggleButtonGroup-grouped": { border: 1 },
-              "& .MuiToggleButton-root": {
-                px: 2,
-                py: 0.75,
-                textTransform: "none",
-                fontWeight: 600,
-                "&.Mui-selected": {
-                  bgcolor: "rgba(103,232,249,0.25)",
-                  color: "#67e8f9",
-                  "&:hover": { bgcolor: "rgba(103,232,249,0.35)" },
-                },
-              },
-            }}
-          >
-            {GAMES.map((g) => (
-              <ToggleButton key={g.value} value={g.value} aria-label={g.label}>
-                {g.label}
-              </ToggleButton>
-            ))}
-          </ToggleButtonGroup>
+          <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap", alignItems: "center" }}>
+              {GAMES.map((g) => {
+                const isSelected = selectedGame === g.value;
+                return (
+                  <Box
+                    key={g.value}
+                    role="button"
+                    tabIndex={0}
+                    aria-pressed={isSelected}
+                    aria-label={`${g.label}${isSelected ? " (selected)" : ""}`}
+                    onClick={() => {
+                      setSelectedGame(g.value);
+                      try {
+                        localStorage.setItem("team-builder-game-type", g.value);
+                      } catch {
+                        // ignore
+                      }
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        setSelectedGame(g.value);
+                        try {
+                          localStorage.setItem("team-builder-game-type", g.value);
+                        } catch {
+                          // ignore
+                        }
+                      }
+                    }}
+                    sx={{
+                      minWidth: 88,
+                      px: 1.5,
+                      py: 0.6,
+                      borderRadius: 1.5,
+                      border: "2px solid",
+                      borderColor: isSelected ? "#22c55e" : "rgba(255,255,255,0.12)",
+                      bgcolor: isSelected ? "rgba(34,197,94,0.15)" : "rgba(255,255,255,0.04)",
+                      color: isSelected ? "#4ade80" : "text.secondary",
+                      fontWeight: 700,
+                      fontSize: "0.875rem",
+                      textAlign: "center",
+                      cursor: "pointer",
+                      position: "relative",
+                      boxShadow: isSelected ? "0 0 16px rgba(34,197,94,0.3)" : "none",
+                      transition: "border-color 0.2s, background-color 0.2s, box-shadow 0.2s, color 0.2s",
+                      "&:hover": {
+                        borderColor: isSelected ? "#22c55e" : "rgba(34,197,94,0.4)",
+                        bgcolor: isSelected ? "rgba(34,197,94,0.2)" : "rgba(255,255,255,0.08)",
+                      },
+                    }}
+                  >
+                    {isSelected && (
+                      <Box
+                        sx={{
+                          position: "absolute",
+                          top: 3,
+                          right: 5,
+                          width: 6,
+                          height: 6,
+                          borderRadius: "50%",
+                          bgcolor: "#22c55e",
+                          boxShadow: "0 0 6px #22c55e",
+                        }}
+                      />
+                    )}
+                    {g.label}
+                  </Box>
+                );
+              })}
+            </Box>
         </div>
       </div>
 
@@ -1594,9 +1674,27 @@ export default function TeamBuilderPage() {
                     }}
                   >
                     <CardContent sx={{ py: 3, px: 3 }}>
-                      <Typography variant="body2" color="text.secondary" display="block" sx={{ mb: 2 }}>
-                        {gameLabel} · Season {game.season} · by {game.createdByName}
-                      </Typography>
+                      <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 2, mb: 2 }}>
+                        <Typography variant="body2" color="text.secondary" display="block">
+                          {gameLabel} · Season {game.season} · by {game.createdByName}
+                        </Typography>
+                        {isCreator && (
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            disabled={cancellingGameId === game.id}
+                            onClick={() => handleCancelGame(game.id)}
+                            sx={{
+                              borderColor: "rgba(239,68,68,0.6)",
+                              color: "#fca5a5",
+                              flexShrink: 0,
+                              "&:hover": { borderColor: "#ef4444", bgcolor: "rgba(239,68,68,0.1)" },
+                            }}
+                          >
+                            {cancellingGameId === game.id ? "Cancelling…" : "Cancel game"}
+                          </Button>
+                        )}
+                      </Box>
                       <div className="grid grid-cols-2 gap-4 mb-4">
                         <Box sx={{ p: 2.5, borderRadius: 1, bgcolor: "rgba(103,232,249,0.1)", border: "1px solid rgba(103,232,249,0.3)" }}>
                           <Typography

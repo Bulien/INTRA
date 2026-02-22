@@ -107,43 +107,41 @@ export default function UserGameHistoryPage() {
           {games.map((g) => (
             <Card
               key={g.id}
-              component={Link}
-              href={`/team-builder?game=${g.id}`}
               sx={{
                 border: "1px solid",
                 borderColor: "rgba(255,255,255,0.1)",
                 bgcolor: "rgba(26,26,26,0.8)",
                 borderRadius: 2,
-                textDecoration: "none",
-                color: "inherit",
                 "&:hover": { borderColor: "rgba(103, 232, 249, 0.4)" },
               }}
             >
               <CardContent sx={{ py: 2, "&:last-child": { pb: 2 } }}>
-                <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1.5, mb: 1 }}>
-                  <SportsEsportsIcon sx={{ color: "#67e8f9", fontSize: 22 }} />
-                  <Typography variant="subtitle1" sx={{ fontWeight: 700, color: "#67e8f9" }}>
-                    {g.gameLabel}
-                  </Typography>
-                  <Chip label={`S${g.season}`} size="small" sx={{ bgcolor: "rgba(255,255,255,0.08)" }} />
-                  <Chip
-                    label={g.userTeam === "yin" ? "Yin" : "Yang"}
-                    size="small"
-                    sx={{
-                      bgcolor: g.userTeam === "yin" ? "rgba(34, 197, 94, 0.2)" : "rgba(234, 179, 8, 0.2)",
-                      color: g.userTeam === "yin" ? "#86efac" : "#fbbf24",
-                    }}
-                  />
-                  {g.userWon === true && (
-                    <Chip label="Won" size="small" sx={{ bgcolor: "rgba(34, 197, 94, 0.2)", color: "#86efac" }} />
-                  )}
-                  {g.userWon === false && (
-                    <Chip label="Lost" size="small" sx={{ bgcolor: "rgba(239, 68, 68, 0.2)", color: "#fca5a5" }} />
-                  )}
+                <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 2, mb: 1.5 }}>
+                  <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1.5 }}>
+                    <SportsEsportsIcon sx={{ color: "#67e8f9", fontSize: 22 }} />
+                    <Link
+                      href={`/team-builder?game=${g.id}`}
+                      className="text-cyan-200 hover:text-cyan-100 hover:underline"
+                      style={{ textDecoration: "none" }}
+                    >
+                      <Typography component="span" variant="subtitle1" sx={{ fontWeight: 700, color: "#67e8f9" }}>
+                        {g.gameLabel}
+                      </Typography>
+                    </Link>
+                    <Chip label={`S${g.season}`} size="small" sx={{ bgcolor: "rgba(255,255,255,0.08)" }} />
+                    {g.userWon === true && (
+                      <Chip label="Won" size="small" sx={{ bgcolor: "rgba(34, 197, 94, 0.2)", color: "#86efac" }} />
+                    )}
+                    {g.userWon === false && (
+                      <Chip label="Lost" size="small" sx={{ bgcolor: "rgba(239, 68, 68, 0.2)", color: "#fca5a5" }} />
+                    )}
+                  </Box>
+                  <Box sx={{ textAlign: "right", flexShrink: 0 }}>
+                    <Typography variant="body2" color="text.secondary">
+                      {formatDate(g.createdAt)}
+                    </Typography>
+                  </Box>
                 </Box>
-                <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-                  {formatDate(g.createdAt)} · Created by {g.createdByName}
-                </Typography>
                 <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
                   <Box sx={{ display: "flex", alignItems: "baseline" }}>
                     <Box component="span" sx={{ width: 44, flexShrink: 0 }}>
