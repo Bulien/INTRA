@@ -64,7 +64,10 @@ export async function GET(req: Request) {
       winner: g.winner,
       createdAt: g.createdAt,
       createdById: g.createdById,
-      createdByName: (g.createdBy as { name?: string }).name ?? (g.createdBy as { username?: string }).username ?? "Someone",
+      createdByName: (() => {
+        const by = (g as { createdBy?: { name?: string; username?: string } }).createdBy;
+        return by?.name ?? by?.username ?? "Someone";
+      })(),
     })),
   });
 }

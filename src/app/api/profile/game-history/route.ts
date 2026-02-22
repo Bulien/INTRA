@@ -108,7 +108,7 @@ export async function GET() {
     const userTeam: "yin" | "yang" = inA ? "yin" : "yang";
     const isSc = g.gameType === "sc";
 
-    const by = g.createdBy as { name?: string; username?: string } | undefined;
+    const by = (g as { createdBy?: { name?: string; username?: string } }).createdBy;
     const name = (by?.name ?? by?.username ?? "Someone").trim() || "Someone";
 
     const teamYin = teamA.map((p) => ({ name: (p.name ?? "").trim(), rating: p.rating }));
