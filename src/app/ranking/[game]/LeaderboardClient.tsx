@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { Box, Skeleton, Typography } from "@mui/material";
 import EmojiEventsIcon from "@mui/icons-material/EmojiEvents";
+import { computeElo } from "@/lib/elo";
 
 type PlayerRow = {
   id: string;
@@ -34,13 +35,14 @@ function computeStats(scores: (number | null)[], gameType: string) {
       games > 0
         ? Math.round((placementScores.reduce((a, b) => a + b, 0) / games) * 10) / 10
         : 0;
-    return { wins: 0, losses: 0, games, winrate: 0, avgPlace, isSc: true };
+    return { wins: 0, losses: 0, games, winrate: 0, avgPlace, elo: 0, isSc: true };
   }
   const wins = scores.filter((s) => s === 1).length;
   const losses = scores.filter((s) => s === 0).length;
   const games = wins + losses;
   const winrate = games > 0 ? Math.round((wins / games) * 100) : 0;
-  return { wins, losses, games, winrate, avgPlace: 0, isSc: false };
+  const elo = computeElo(wins, losses);
+  return { wins, losses, games, winrate, avgPlace: 0, elo, isSc: false };
 }
 
 type RowWithStats = PlayerRow & {
@@ -49,6 +51,7 @@ type RowWithStats = PlayerRow & {
   games: number;
   winrate: number;
   avgPlace: number;
+  elo: number;
   isSc: boolean;
 };
 
@@ -82,7 +85,7 @@ export function LeaderboardClient({
       list.sort((a, b) =>
         gameType === "sc"
           ? (a.avgPlace || 999) - (b.avgPlace || 999) || (a.playerName || "").localeCompare(b.playerName || "")
-          : b.wins - a.wins || (a.playerName || "").localeCompare(b.playerName || "")
+          : b.elo - a.elo || (a.playerName || "").localeCompare(b.playerName || "")
       );
       setPlayers(list);
     } else {
@@ -93,7 +96,7 @@ export function LeaderboardClient({
       list.sort((a, b) =>
         gameType === "sc"
           ? (a.avgPlace || 999) - (b.avgPlace || 999) || (a.playerName || "").localeCompare(b.playerName || "")
-          : b.wins - a.wins || (a.playerName || "").localeCompare(b.playerName || "")
+          : b.elo - a.elo || (a.playerName || "").localeCompare(b.playerName || "")
       );
       setPlayers(list);
     }
@@ -225,7 +228,7 @@ export function LeaderboardClient({
                         {p.losses} L
                       </Typography>
                       <Typography variant="body2" fontWeight={600} sx={{ color: "#67e8f9", fontVariantNumeric: "tabular-nums" }}>
-                        {p.winrate}%
+                        {p.elo}
                       </Typography>
                     </>
                   )}

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { computeElo } from "@/lib/elo";
 import { prisma } from "@/lib/prisma";
 
 const GAME_TYPES = ["lol", "ow", "sc", "battlerite"] as const;
@@ -27,7 +28,7 @@ export async function GET() {
 
   const byGame: Record<
     string,
-    { gamesPlayed: number; wins: number; losses: number; winrate: number | null; label: string; averageRating: number | null; averagePlacement: number | null; rank: number | null }
+    { gamesPlayed: number; wins: number; losses: number; winrate: number | null; elo: number | null; label: string; averageRating: number | null; averagePlacement: number | null; rank: number | null }
   > = {};
 
   const avgRows = await (prisma as unknown as {
@@ -75,7 +76,7 @@ export async function GET() {
       winrate = gamesPlayed > 0 ? Math.round((wins / gamesPlayed) * 100) : null;
     }
 
-    // Ladder rank: same sort as leaderboard (SC by avgPlace asc, others by wins desc)
+    // Ladder rank: same sort as leaderboard (SC by avgPlace asc, team games by Elo desc)
     const withSortKey = players.map((p) => {
       const s = (JSON.parse(p.scores || "[]") as (number | null)[]);
       if (gameType === "sc") {
@@ -84,7 +85,8 @@ export async function GET() {
         return { name: p.name, sortKey: avg, nameLower: normalizeName(p.name) };
       }
       const w = s.filter((x) => x === 1).length;
-      return { name: p.name, sortKey: w, nameLower: normalizeName(p.name) };
+      const l = s.filter((x) => x === 0).length;
+      return { name: p.name, sortKey: computeElo(w, l), nameLower: normalizeName(p.name) };
     });
     if (gameType === "sc") {
       withSortKey.sort((a, b) => a.sortKey - b.sortKey || (a.name ?? "").localeCompare(b.name ?? ""));
@@ -94,11 +96,13 @@ export async function GET() {
     const rankIndex = withSortKey.findIndex((p) => p.nameLower === userName);
     const rank = rankIndex >= 0 ? rankIndex + 1 : null;
 
+    const elo = gameType === "sc" ? null : computeElo(wins, losses);
     byGame[gameType] = {
       gamesPlayed,
       wins,
       losses,
       winrate,
+      elo,
       label: GAME_LABELS[gameType] ?? gameType,
       averageRating: gameType === "sc" ? null : (avgByGame[gameType] ?? null),
       averagePlacement: gameType === "sc" ? averagePlacement : null,

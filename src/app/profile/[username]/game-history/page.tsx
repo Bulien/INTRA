@@ -31,6 +31,7 @@ type GameHistoryEntry = {
   teamYin: TeamPlayer[];
   teamYang: TeamPlayer[];
   scPlacements?: ScPlacement[];
+  eloDelta?: number | null;
 };
 
 async function fetchUserGameHistory(
@@ -234,6 +235,19 @@ export default function UserGameHistoryPage() {
                     {g.userWon === false && (
                       <Chip label="Lost" size="small" sx={{ bgcolor: "rgba(239, 68, 68, 0.2)", color: "#fca5a5" }} />
                     )}
+                    {g.gameType !== "sc" && g.eloDelta != null && (
+                      <Typography
+                        component="span"
+                        variant="caption"
+                        sx={{
+                          fontWeight: 700,
+                          color: g.eloDelta >= 0 ? "#86efac" : "#fca5a5",
+                          fontVariantNumeric: "tabular-nums",
+                        }}
+                      >
+                        {g.eloDelta >= 0 ? "+" : ""}{g.eloDelta} Elo
+                      </Typography>
+                    )}
                   </Box>
                   <Box sx={{ textAlign: "right", flexShrink: 0 }}>
                     <Typography variant="body2" color="text.secondary">
@@ -241,77 +255,121 @@ export default function UserGameHistoryPage() {
                     </Typography>
                   </Box>
                 </Box>
-                <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
+                <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
                   {g.gameType === "sc" ? (
                     (g.scPlacements?.length ?? 0) > 0 ? (
-                      (g.scPlacements ?? []).map(({ playerName, placement }) => {
-                        const label = placement === 1 ? "1st" : placement === 2 ? "2nd" : placement === 3 ? "3rd" : `${placement}th`;
-                        return (
-                          <Box key={`${playerName}-${placement}`} sx={{ display: "flex", alignItems: "baseline" }}>
-                            <Box component="span" sx={{ width: 36, flexShrink: 0 }}>
-                              <Typography component="span" variant="body2" color="text.secondary" fontWeight={600}>
-                                {label}:
+                      <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
+                        {(g.scPlacements ?? []).map(({ playerName, placement }) => {
+                          const label = placement === 1 ? "1st" : placement === 2 ? "2nd" : placement === 3 ? "3rd" : `${placement}th`;
+                          return (
+                            <Box
+                              key={`${playerName}-${placement}`}
+                              sx={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 1.5,
+                                py: 0.5,
+                                px: 1.25,
+                                borderRadius: 1,
+                                bgcolor: "rgba(255,255,255,0.04)",
+                              }}
+                            >
+                              <Typography variant="caption" sx={{ fontWeight: 700, color: "text.secondary", minWidth: 28 }}>
+                                {label}
                               </Typography>
-                            </Box>
-                            <Typography component="span" variant="body2" color="text.secondary">
                               <Link
                                 href={`/profile/${encodeURIComponent(playerName)}`}
-                                className="text-cyan-200 hover:text-cyan-100 hover:underline"
+                                style={{ textDecoration: "none", color: "#67e8f9", fontWeight: 500, fontSize: "0.875rem" }}
+                                className="hover:underline"
                               >
                                 {playerName || "—"}
                               </Link>
-                            </Typography>
-                          </Box>
-                        );
-                      })
+                            </Box>
+                          );
+                        })}
+                      </Box>
                     ) : (
                       <Typography variant="body2" color="text.secondary">
                         Results not in ranking yet
                       </Typography>
                     )
                   ) : (
-                    <>
-                      <Box sx={{ display: "flex", alignItems: "baseline" }}>
-                        <Box component="span" sx={{ width: 44, flexShrink: 0 }}>
-                          <Typography component="span" variant="body2" color="text.secondary" fontWeight={600}>
-                            Yin:
-                          </Typography>
-                        </Box>
-                        <Typography component="span" variant="body2" color="text.secondary">
+                    <Box sx={{ display: "flex", flexDirection: { xs: "column", sm: "row" }, gap: 1.5 }}>
+                      <Box
+                        sx={{
+                          flex: 1,
+                          minWidth: 0,
+                          p: 1.25,
+                          borderRadius: 1.5,
+                          bgcolor: "rgba(103, 232, 249, 0.06)",
+                          border: "1px solid rgba(103, 232, 249, 0.2)",
+                        }}
+                      >
+                        <Typography variant="caption" sx={{ fontWeight: 700, color: "#67e8f9", textTransform: "uppercase", letterSpacing: "0.05em", display: "block", mb: 0.75 }}>
+                          Yin
+                        </Typography>
+                        <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.75 }}>
                           {(g.teamYin ?? []).map((p, i) => (
-                            <span key={i}>
-                              <Link
-                                href={`/profile/${encodeURIComponent(p.name)}`}
-                                className="text-cyan-200 hover:text-cyan-100 hover:underline"
-                              >
-                                {p.name || "—"}
-                              </Link>
-                              {i < (g.teamYin ?? []).length - 1 && ", "}
-                            </span>
+                            <Link
+                              key={i}
+                              href={`/profile/${encodeURIComponent(p.name)}`}
+                              style={{ textDecoration: "none" }}
+                              className="hover:underline"
+                            >
+                              <Chip
+                                label={p.name || "—"}
+                                size="small"
+                                sx={{
+                                  height: 24,
+                                  fontSize: "0.8125rem",
+                                  bgcolor: "rgba(103, 232, 249, 0.12)",
+                                  color: "#a5f3fc",
+                                  border: "none",
+                                  "&:hover": { bgcolor: "rgba(103, 232, 249, 0.2)" },
+                                }}
+                              />
+                            </Link>
                           ))}
-                        </Typography>
-                      </Box>
-                      <Box sx={{ display: "flex", alignItems: "baseline" }}>
-                        <Box component="span" sx={{ width: 44, flexShrink: 0 }}>
-                          <Typography component="span" variant="body2" color="text.secondary" fontWeight={600}>
-                            Yang:
-                          </Typography>
                         </Box>
-                        <Typography component="span" variant="body2" color="text.secondary">
-                          {(g.teamYang ?? []).map((p, i) => (
-                            <span key={i}>
-                              <Link
-                                href={`/profile/${encodeURIComponent(p.name)}`}
-                                className="text-cyan-200 hover:text-cyan-100 hover:underline"
-                              >
-                                {p.name || "—"}
-                              </Link>
-                              {i < (g.teamYang ?? []).length - 1 && ", "}
-                            </span>
-                          ))}
-                        </Typography>
                       </Box>
-                    </>
+                      <Box
+                        sx={{
+                          flex: 1,
+                          minWidth: 0,
+                          p: 1.25,
+                          borderRadius: 1.5,
+                          bgcolor: "rgba(249, 168, 212, 0.06)",
+                          border: "1px solid rgba(249, 168, 212, 0.2)",
+                        }}
+                      >
+                        <Typography variant="caption" sx={{ fontWeight: 700, color: "#f9a8d4", textTransform: "uppercase", letterSpacing: "0.05em", display: "block", mb: 0.75 }}>
+                          Yang
+                        </Typography>
+                        <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.75 }}>
+                          {(g.teamYang ?? []).map((p, i) => (
+                            <Link
+                              key={i}
+                              href={`/profile/${encodeURIComponent(p.name)}`}
+                              style={{ textDecoration: "none" }}
+                              className="hover:underline"
+                            >
+                              <Chip
+                                label={p.name || "—"}
+                                size="small"
+                                sx={{
+                                  height: 24,
+                                  fontSize: "0.8125rem",
+                                  bgcolor: "rgba(249, 168, 212, 0.12)",
+                                  color: "#fbcfe8",
+                                  border: "none",
+                                  "&:hover": { bgcolor: "rgba(249, 168, 212, 0.2)" },
+                                }}
+                              />
+                            </Link>
+                          ))}
+                        </Box>
+                      </Box>
+                    </Box>
                   )}
                 </Box>
               </CardContent>

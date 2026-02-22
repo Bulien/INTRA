@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Box, Card, CardContent, Typography, Button, Skeleton } from "@mui/material";
 import EmojiEventsIcon from "@mui/icons-material/EmojiEvents";
 import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
+import { computeElo } from "@/lib/elo";
 
 const GAMES = [
   { slug: "lol", name: "League of Legends", accent: "linear-gradient(135deg, #67e8f9 0%, #22d3ee 100%)" },
@@ -32,11 +33,11 @@ async function fetchRanking(game: string, season: number) {
   };
 }
 
-/** Compute stats for ranking preview. For SC: placements 1–4 (games = count, avg = avg place). For others: wins/losses (games, winrate). */
+/** Compute stats for ranking preview. For SC: placements 1–4 (games, avg place). For others: wins/losses (games, elo). */
 function playerStats(
   scores: (number | null)[],
   gameSlug: string
-): { games: number; avg: number; wr: number | null } {
+): { games: number; avg: number; elo: number | null } {
   if (gameSlug === "sc") {
     const placementScores = scores.filter((s): s is number => s !== null && s >= 1 && s <= 4);
     const games = placementScores.length;
@@ -44,14 +45,13 @@ function playerStats(
       games > 0
         ? Math.round((placementScores.reduce((a, b) => a + b, 0) / games) * 10) / 10
         : 999; // no games → sort last
-    return { games, avg, wr: null };
+    return { games, avg, elo: null };
   }
   const wins = scores.filter((s) => s === 1).length;
   const losses = scores.filter((s) => s === 0).length;
   const games = wins + losses;
-  const wr = games > 0 ? Math.round((wins / games) * 100) : null;
-  const avg = games > 0 ? (wins / games) * 100 : 0; // for sort: higher winrate = better
-  return { games, avg, wr };
+  const elo = computeElo(wins, losses);
+  return { games, avg: elo, elo }; // avg used as sort key (higher = better)
 }
 
 export default function HomePage() {
@@ -266,11 +266,11 @@ export default function HomePage() {
                               fontSize: "0.875rem",
                               fontWeight: 600,
                               letterSpacing: "0.02em",
-                              color: g.slug === "sc" ? "#a5f3fc" : p.wr !== null ? "#a5f3fc" : "text.secondary",
+                              color: g.slug === "sc" ? "#a5f3fc" : p.elo !== null ? "#a5f3fc" : "text.secondary",
                               flexShrink: 0,
                             }}
                           >
-                            {g.slug === "sc" ? (p.games > 0 ? `Avg ${Number(p.avg).toFixed(1)}` : "—") : (p.wr !== null ? `${p.wr}%` : "—")}
+                            {g.slug === "sc" ? (p.games > 0 ? `Avg ${Number(p.avg).toFixed(1)}` : "—") : (p.elo !== null ? p.elo : "—")}
                           </Typography>
                         </li>
                       ))}

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { computeEloDelta } from "@/lib/elo";
 import { prisma } from "@/lib/prisma";
 
 const GAME_LABELS: Record<string, string> = {
@@ -31,6 +32,8 @@ export type ProfileGameHistoryEntry = {
   teamYang: TeamPlayer[];
   /** For SC only: 1st–4th place, sorted by placement */
   scPlacements?: ScPlacement[];
+  /** For non-SC: Elo change from this game (positive = gained, negative = lost) */
+  eloDelta?: number | null;
 };
 
 export async function GET() {
@@ -151,7 +154,23 @@ export async function GET() {
       teamYin,
       teamYang,
       scPlacements,
+      eloDelta: undefined, // set below for non-SC
     });
+  }
+
+  // Attach Elo delta for non-SC games (result is desc by createdAt; "before" = older = higher index)
+  for (let i = 0; i < result.length; i++) {
+    const entry = result[i];
+    if (entry.gameType === "sc" || entry.userWon == null) continue;
+    let winsBefore = 0;
+    let lossesBefore = 0;
+    for (let j = i + 1; j < result.length; j++) {
+      const o = result[j];
+      if (o.gameType !== entry.gameType) continue;
+      if (o.userWon === true) winsBefore++;
+      if (o.userWon === false) lossesBefore++;
+    }
+    entry.eloDelta = computeEloDelta(winsBefore, lossesBefore, entry.userWon);
   }
 
   return NextResponse.json({ games: result });

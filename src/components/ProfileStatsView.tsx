@@ -16,6 +16,7 @@ export type GameStats = {
   wins: number;
   losses: number;
   winrate: number | null;
+  elo?: number | null;
   label: string;
   averageRating?: number | null;
   averagePlacement?: number | null;
@@ -150,6 +151,12 @@ export function ProfileStatsView({ stats, isOwnProfile = true }: ProfileStatsVie
                   <>
                     <Box component="dt">Rank</Box>
                     <Box component="dd" sx={{ color: "#a5f3fc" }}>#{g.rank}</Box>
+                  </>
+                )}
+                {gameKey !== "sc" && g.elo != null && (
+                  <>
+                    <Box component="dt">Elo</Box>
+                    <Box component="dd" sx={{ color: "#a5f3fc" }}>{g.elo}</Box>
                   </>
                 )}
                 <Box component="dt">Games</Box>

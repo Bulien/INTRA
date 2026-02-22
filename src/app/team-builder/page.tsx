@@ -20,10 +20,6 @@ import {
   Slider,
   Divider,
   Tooltip,
-  Select,
-  MenuItem,
-  FormControl,
-  InputLabel,
 } from "@mui/material";
 import DeleteIcon from "@mui/icons-material/Delete";
 import AddIcon from "@mui/icons-material/Add";
@@ -2084,7 +2080,7 @@ export default function TeamBuilderPage() {
         </DialogTitle>
         <DialogContent>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            Enter each player&apos;s placement. Use 1 for 1st, 2 for 2nd, 3 for 3rd, 4 for 4th. Each number 1–4 must be used exactly once.
+            Assign each player a place (1–4). Each number must be used exactly once.
           </Typography>
           {scPlacementsGame && (
             <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
@@ -2092,29 +2088,48 @@ export default function TeamBuilderPage() {
                 .filter((p) => (p.name ?? "").trim())
                 .map((p) => {
                   const name = (p.name ?? "").trim();
+                  const current = scPlacements[name];
                   return (
-                    <Box key={p.id} sx={{ display: "flex", alignItems: "center", gap: 2 }}>
-                      <Typography sx={{ flex: 1, color: "text.primary" }} noWrap>
+                    <Box key={p.id} sx={{ display: "flex", alignItems: "center", gap: 2, flexWrap: "wrap" }}>
+                      <Typography sx={{ flex: "1 1 120px", minWidth: 0, color: "text.primary" }} noWrap>
                         {name}
                       </Typography>
-                      <FormControl size="small" sx={{ minWidth: 100 }}>
-                        <InputLabel>Place</InputLabel>
-                        <Select
-                          value={scPlacements[name] ?? ""}
-                          label="Place"
-                          onChange={(e) =>
-                            setScPlacements((prev) => ({
-                              ...prev,
-                              [name]: Number(e.target.value) as number,
-                            }))
-                          }
-                        >
-                          <MenuItem value={1}>1st</MenuItem>
-                          <MenuItem value={2}>2nd</MenuItem>
-                          <MenuItem value={3}>3rd</MenuItem>
-                          <MenuItem value={4}>4th</MenuItem>
-                        </Select>
-                      </FormControl>
+                      <Box sx={{ display: "flex", gap: 0.5 }}>
+                        {[1, 2, 3, 4].map((place) => {
+                          const isSelected = current === place;
+                          return (
+                            <Button
+                              key={place}
+                              size="small"
+                              variant={isSelected ? "contained" : "outlined"}
+                              onClick={() =>
+                                setScPlacements((prev) => ({
+                                  ...prev,
+                                  [name]: place,
+                                }))
+                              }
+                              sx={{
+                                minWidth: 40,
+                                px: 1,
+                                ...(isSelected
+                                  ? {
+                                      bgcolor: "#67e8f9",
+                                      color: "#0f0f0f",
+                                      borderColor: "#67e8f9",
+                                      "&:hover": { bgcolor: "#22d3ee", borderColor: "#22d3ee" },
+                                    }
+                                  : {
+                                      borderColor: "rgba(255,255,255,0.3)",
+                                      color: "text.secondary",
+                                      "&:hover": { borderColor: "#67e8f9", color: "#67e8f9" },
+                                    }),
+                              }}
+                            >
+                              {place}
+                            </Button>
+                          );
+                        })}
+                      </Box>
                     </Box>
                   );
                 })}
