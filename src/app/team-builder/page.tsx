@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
@@ -33,6 +33,8 @@ import EmojiEventsIcon from "@mui/icons-material/EmojiEvents";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import ShuffleIcon from "@mui/icons-material/Shuffle";
+import HistoryIcon from "@mui/icons-material/History";
+import PersonIcon from "@mui/icons-material/Person";
 import { sanitizeDisplayName } from "@/lib/sanitizeInput";
 
 const GAMES = [
@@ -235,7 +237,7 @@ export default function TeamBuilderPage() {
   const [finishingGameId, setFinishingGameId] = useState<string | null>(null);
   const [canValidate, setCanValidate] = useState(false);
   const [validateUserCount, setValidateUserCount] = useState(0);
-  const [minRequiredByGame, setMinRequiredByGame] = useState<Record<string, number>>({ lol: 10, ow: 10, sc: 3, battlerite: 10 });
+  const [minRequiredByGame, setMinRequiredByGame] = useState<Record<string, number>>({ lol: 6, ow: 6, sc: 3, battlerite: 6 });
   const [playerSuggestions, setPlayerSuggestions] = useState<string[]>([]);
   const [playerSuggestionsLoading, setPlayerSuggestionsLoading] = useState(false);
   const [playerSuggestionsIndex, setPlayerSuggestionsIndex] = useState(0);
@@ -254,6 +256,11 @@ export default function TeamBuilderPage() {
   const playerInputRef = useRef<HTMLInputElement>(null);
   const playerInputContainerRef = useRef<HTMLDivElement>(null);
   const editInputContainerRef = useRef<HTMLDivElement>(null);
+
+  const registeredSet = useMemo(
+    () => new Set((registeredUserNames ?? []).map((n) => String(n).trim().toLowerCase())),
+    [registeredUserNames]
+  );
 
   useEffect(() => {
     setPlayers(loadTeamBuilderPlayers());
@@ -278,7 +285,7 @@ export default function TeamBuilderPage() {
       .then((data) => {
         setCanValidate(Boolean(data.canValidate));
         setValidateUserCount(Number(data.userCount) || 0);
-        setMinRequiredByGame(data.minRequiredByGame ?? { lol: 10, ow: 10, sc: 3, battlerite: 10 });
+        setMinRequiredByGame(data.minRequiredByGame ?? { lol: 6, ow: 6, sc: 3, battlerite: 6 });
       })
       .catch(() => { setCanValidate(false); setValidateUserCount(0); setMinRequiredByGame({}); });
   }, []);
@@ -547,6 +554,49 @@ export default function TeamBuilderPage() {
     }
   }, []);
 
+  const [lastGameLoading, setLastGameLoading] = useState(false);
+  const [lastGameError, setLastGameError] = useState<string | null>(null);
+  useEffect(() => {
+    setLastGameError(null);
+  }, [selectedGame]);
+
+  const loadLastGame = useCallback(async () => {
+    setLastGameError(null);
+    setLastGameLoading(true);
+    try {
+      const res = await fetch(`/api/team-builder/last-game?gameType=${encodeURIComponent(selectedGame)}`, { cache: "no-store" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setLastGameError((data as { error?: string }).error ?? "Failed to load last game");
+        return;
+      }
+      const game = (data as { game: { teamA: { id: string; name: string; rating?: number }[]; teamB: { id: string; name: string; rating?: number }[] } | null }).game;
+      if (!game?.teamA?.length && !game?.teamB?.length) {
+        setLastGameError("No submitted game found for this game type.");
+        return;
+      }
+      const all = [...(game.teamA ?? []), ...(game.teamB ?? [])];
+      const seen = new Set<string>();
+      const unique = all.filter((p) => {
+        const key = (p.name ?? "").trim().toLowerCase();
+        if (!key || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+      const playersFromLast: Player[] = unique.map((p, i) => ({
+        id: `last-${i}-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        name: (p.name ?? "").trim() || "Unknown",
+        rating: typeof p.rating === "number" && p.rating >= 1 && p.rating <= 10 ? p.rating : 5,
+      }));
+      setPlayers(playersFromLast);
+      saveTeamBuilderPlayers(playersFromLast);
+    } catch {
+      setLastGameError("Failed to load last game");
+    } finally {
+      setLastGameLoading(false);
+    }
+  }, [selectedGame]);
+
   const refillTeams = useCallback(() => {
     setRefillResult(balanceTeams(players, { shuffleSameRating: true }));
   }, [players]);
@@ -590,7 +640,7 @@ export default function TeamBuilderPage() {
   );
 
   const openScPlacementsDialog = useCallback((game: SharedGame) => {
-    const minRequired = minRequiredByGame[game.gameType] ?? 10;
+    const minRequired = minRequiredByGame[game.gameType] ?? 6;
     if (validateUserCount < minRequired) {
       setResultBlockedMessage(`Result submission requires at least ${minRequired} registered players (${validateUserCount} currently).`);
       setTimeout(() => setResultBlockedMessage(null), 5000);
@@ -680,7 +730,7 @@ export default function TeamBuilderPage() {
   const [resultBlockedMessage, setResultBlockedMessage] = useState<string | null>(null);
   const openConfirmSharedResult = (gameId: string, winner: "yin" | "yang") => {
     const game = activeSharedGames.find((g) => g.id === gameId);
-    const minRequired = game ? (minRequiredByGame[game.gameType] ?? 10) : 10;
+    const minRequired = game ? (minRequiredByGame[game.gameType] ?? 6) : 6;
     if (validateUserCount < minRequired) {
       setResultBlockedMessage(`Result submission requires at least ${minRequired} registered players (${validateUserCount} currently).`);
       setTimeout(() => setResultBlockedMessage(null), 5000);
@@ -843,7 +893,7 @@ export default function TeamBuilderPage() {
             const registeredInGame = [...game.teamA, ...game.teamB].filter(
               (p) => (p.name ?? "").trim() !== "" && registeredNorm.has((p.name ?? "").trim().toLowerCase())
             ).length;
-            const minRequiredThisGame = minRequiredByGame[game.gameType] ?? 10;
+            const minRequiredThisGame = minRequiredByGame[game.gameType] ?? 6;
             const canSubmitThisGame =
               validateUserCount >= minRequiredThisGame &&
               (game.gameType === "sc" ? registeredInGame >= 3 : allPlayersRegistered);
@@ -888,9 +938,16 @@ export default function TeamBuilderPage() {
                       <ul className="list-none p-0 m-0 space-y-1">
                         {game.teamA.map((p) => (
                           <li key={p.id} className="flex justify-between text-sm">
-                            <Link href={`/profile/${encodeURIComponent((p.name ?? "").trim())}`} className="text-neutral-200 hover:text-cyan-200 hover:underline">
-                              {p.name}
-                            </Link>
+                            <span className="flex items-center gap-1">
+                              <Link href={`/profile/${encodeURIComponent((p.name ?? "").trim())}`} className="text-neutral-200 hover:text-cyan-200 hover:underline">
+                                {p.name}
+                              </Link>
+                              {registeredNorm.has((p.name ?? "").trim().toLowerCase()) && (
+                                <Tooltip title="Has account" placement="top" arrow>
+                                  <PersonIcon sx={{ fontSize: 16, color: "#67e8f9" }} aria-label="Has account" />
+                                </Tooltip>
+                              )}
+                            </span>
                             {game.gameType !== "sc" && <span className="font-semibold text-cyan-200">{p.rating ?? "—"}</span>}
                           </li>
                         ))}
@@ -919,9 +976,16 @@ export default function TeamBuilderPage() {
                       <ul className="list-none p-0 m-0 space-y-1">
                         {game.teamB.map((p) => (
                           <li key={p.id} className="flex justify-between text-sm">
-                            <Link href={`/profile/${encodeURIComponent((p.name ?? "").trim())}`} className="text-neutral-200 hover:text-cyan-200 hover:underline">
-                              {p.name}
-                            </Link>
+                            <span className="flex items-center gap-1">
+                              <Link href={`/profile/${encodeURIComponent((p.name ?? "").trim())}`} className="text-neutral-200 hover:text-cyan-200 hover:underline">
+                                {p.name}
+                              </Link>
+                              {registeredNorm.has((p.name ?? "").trim().toLowerCase()) && (
+                                <Tooltip title="Has account" placement="top" arrow>
+                                  <PersonIcon sx={{ fontSize: 16, color: "#67e8f9" }} aria-label="Has account" />
+                                </Tooltip>
+                              )}
+                            </span>
                             {game.gameType !== "sc" && <span className="font-semibold text-pink-200">{p.rating ?? "—"}</span>}
                           </li>
                         ))}
@@ -1278,6 +1342,16 @@ export default function TeamBuilderPage() {
             <Button
               size="small"
               variant="outlined"
+              startIcon={<HistoryIcon sx={{ fontSize: 18 }} />}
+              onClick={loadLastGame}
+              disabled={lastGameLoading}
+              sx={{ borderColor: "rgba(103,232,249,0.5)", color: "#67e8f9", "&:hover": { borderColor: "#67e8f9", bgcolor: "rgba(103,232,249,0.08)" } }}
+            >
+              {lastGameLoading ? "Loading…" : "Last game"}
+            </Button>
+            <Button
+              size="small"
+              variant="outlined"
               color="error"
               startIcon={<RefreshIcon />}
               onClick={resetPlayers}
@@ -1285,11 +1359,17 @@ export default function TeamBuilderPage() {
               Reset
             </Button>
           </div>
+          {lastGameError && (
+            <Typography variant="caption" color="error" sx={{ display: "block", mt: 0.5 }}>
+              {lastGameError}
+            </Typography>
+          )}
 
           <div className="space-y-1">
             {players.map((p) => {
               const playerKey = p.name.trim().toLowerCase();
               const avgRating = playerKey ? averageRatingsByPlayer[playerKey] : undefined;
+              const hasAccount = Boolean(playerKey && registeredSet.has(playerKey));
               return (
               <div
                 key={p.id}
@@ -1335,6 +1415,11 @@ export default function TeamBuilderPage() {
                       "& .MuiInputBase-input": { py: 0.5, fontSize: "0.875rem" },
                     }}
                   />
+                  {hasAccount && (
+                    <Tooltip title="Has account" placement="top" arrow>
+                      <PersonIcon sx={{ fontSize: 18, color: "#67e8f9", flexShrink: 0 }} aria-label="Has account" />
+                    </Tooltip>
+                  )}
                   {editingPlayerId === p.id && editSuggestionsLoading && (
                     <Typography component="span" variant="caption" sx={{ color: "text.secondary", flexShrink: 0 }}>…</Typography>
                   )}
@@ -1491,7 +1576,7 @@ export default function TeamBuilderPage() {
                 const registeredInGame2 = [...game.teamA, ...game.teamB].filter(
                   (p) => (p.name ?? "").trim() !== "" && registeredNorm2.has((p.name ?? "").trim().toLowerCase())
                 ).length;
-                const minRequiredThisGame2 = minRequiredByGame[game.gameType] ?? 10;
+                const minRequiredThisGame2 = minRequiredByGame[game.gameType] ?? 6;
                 const canSubmitThisGame2 =
                   validateUserCount >= minRequiredThisGame2 &&
                   (game.gameType === "sc" ? registeredInGame2 >= 3 : allPlayersRegistered2);
@@ -1536,9 +1621,16 @@ export default function TeamBuilderPage() {
                           <ul className="list-none p-0 m-0 space-y-1 text-neutral-300">
                             {game.teamA.map((p) => (
                               <li key={p.id} className="flex justify-between text-base">
-                                <Link href={`/profile/${encodeURIComponent((p.name ?? "").trim())}`} className="hover:text-cyan-200 hover:underline">
-                                  {p.name}
-                                </Link>
+                                <span className="flex items-center gap-1">
+                                  <Link href={`/profile/${encodeURIComponent((p.name ?? "").trim())}`} className="hover:text-cyan-200 hover:underline">
+                                    {p.name}
+                                  </Link>
+                                  {registeredNorm2.has((p.name ?? "").trim().toLowerCase()) && (
+                                    <Tooltip title="Has account" placement="top" arrow>
+                                      <PersonIcon sx={{ fontSize: 16, color: "#67e8f9" }} aria-label="Has account" />
+                                    </Tooltip>
+                                  )}
+                                </span>
                                 {game.gameType !== "sc" && <span className="font-semibold text-cyan-200">{p.rating ?? "—"}</span>}
                               </li>
                             ))}
@@ -1567,9 +1659,16 @@ export default function TeamBuilderPage() {
                           <ul className="list-none p-0 m-0 space-y-1 text-neutral-300">
                             {game.teamB.map((p) => (
                               <li key={p.id} className="flex justify-between text-base">
-                                <Link href={`/profile/${encodeURIComponent((p.name ?? "").trim())}`} className="hover:text-cyan-200 hover:underline">
-                                  {p.name}
-                                </Link>
+                                <span className="flex items-center gap-1">
+                                  <Link href={`/profile/${encodeURIComponent((p.name ?? "").trim())}`} className="hover:text-cyan-200 hover:underline">
+                                    {p.name}
+                                  </Link>
+                                  {registeredNorm2.has((p.name ?? "").trim().toLowerCase()) && (
+                                    <Tooltip title="Has account" placement="top" arrow>
+                                      <PersonIcon sx={{ fontSize: 16, color: "#67e8f9" }} aria-label="Has account" />
+                                    </Tooltip>
+                                  )}
+                                </span>
                                 {game.gameType !== "sc" && <span className="font-semibold text-pink-200">{p.rating ?? "—"}</span>}
                               </li>
                             ))}
@@ -1672,56 +1771,77 @@ export default function TeamBuilderPage() {
                 <Typography variant="caption" fontWeight={700} sx={{ color: "text.secondary", display: "block", mb: 0.5 }}>
                   Player {i + 1}
                 </Typography>
-                <Link href={`/profile/${encodeURIComponent((p.name ?? "").trim())}`} className="text-cyan-200 hover:text-cyan-100 hover:underline font-medium">
-                  {p.name}
-                </Link>
+                <span className="flex items-center gap-1">
+                  <Link href={`/profile/${encodeURIComponent((p.name ?? "").trim())}`} className="text-cyan-200 hover:text-cyan-100 hover:underline font-medium">
+                    {p.name}
+                  </Link>
+                  {registeredSet.has((p.name ?? "").trim().toLowerCase()) && (
+                    <Tooltip title="Has account" placement="top" arrow>
+                      <PersonIcon sx={{ fontSize: 16, color: "#67e8f9" }} aria-label="Has account" />
+                    </Tooltip>
+                  )}
+                </span>
               </CardContent>
             </Card>
           ))}
         </div>
       ) : (
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <Card sx={{ border: "2px solid", borderColor: "rgba(103,232,249,0.4)", background: "rgba(103,232,249,0.03)" }}>
-          <CardContent sx={{ py: 2 }}>
-            <div className="flex justify-between items-center mb-2">
-              <Typography variant="subtitle1" fontWeight={600} sx={{ color: "#67e8f9" }}>
-                Yin — {result.teamAScore}
-              </Typography>
-            </div>
-            <Divider sx={{ my: 1.5, borderColor: "rgba(103,232,249,0.2)" }} />
-            <ul className="space-y-0.5">
-              {result.teamA.map((p) => (
-                <li key={p.id} className="flex justify-between text-sm">
-                  <Link href={`/profile/${encodeURIComponent((p.name ?? "").trim())}`} className="hover:text-cyan-200 hover:underline">
-                    {p.name}
-                  </Link>
-                  <span className="font-medium">{p.rating}</span>
-                </li>
-              ))}
-            </ul>
-          </CardContent>
-        </Card>
-        <Card sx={{ border: "2px solid", borderColor: "rgba(249,168,212,0.4)", background: "rgba(249,168,212,0.03)" }}>
-          <CardContent sx={{ py: 2 }}>
-            <div className="flex justify-between items-center mb-2">
-              <Typography variant="subtitle1" fontWeight={600} sx={{ color: "#f9a8d4" }}>
-                Yang — {result.teamBScore}
-              </Typography>
-            </div>
-            <Divider sx={{ my: 1.5, borderColor: "rgba(249,168,212,0.2)" }} />
-            <ul className="space-y-0.5">
-              {result.teamB.map((p) => (
-                <li key={p.id} className="flex justify-between text-sm">
-                  <Link href={`/profile/${encodeURIComponent((p.name ?? "").trim())}`} className="hover:text-cyan-200 hover:underline">
-                    {p.name}
-                  </Link>
-                  <span className="font-medium">{p.rating}</span>
-                </li>
-              ))}
-            </ul>
-          </CardContent>
-        </Card>
-      </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <Card sx={{ border: "2px solid", borderColor: "rgba(103,232,249,0.4)", background: "rgba(103,232,249,0.03)" }}>
+            <CardContent sx={{ py: 2 }}>
+              <div className="flex justify-between items-center mb-2">
+                <Typography variant="subtitle1" fontWeight={600} sx={{ color: "#67e8f9" }}>
+                  Yin — {result.teamAScore}
+                </Typography>
+              </div>
+              <Divider sx={{ my: 1.5, borderColor: "rgba(103,232,249,0.2)" }} />
+              <ul className="space-y-0.5">
+                {result.teamA.map((p) => (
+                  <li key={p.id} className="flex justify-between text-sm">
+                    <span className="flex items-center gap-1">
+                      <Link href={`/profile/${encodeURIComponent((p.name ?? "").trim())}`} className="hover:text-cyan-200 hover:underline">
+                        {p.name}
+                      </Link>
+                      {registeredSet.has((p.name ?? "").trim().toLowerCase()) && (
+                        <Tooltip title="Has account" placement="top" arrow>
+                          <PersonIcon sx={{ fontSize: 16, color: "#67e8f9" }} aria-label="Has account" />
+                        </Tooltip>
+                      )}
+                    </span>
+                    <span className="font-medium">{p.rating}</span>
+                  </li>
+                ))}
+              </ul>
+            </CardContent>
+          </Card>
+          <Card sx={{ border: "2px solid", borderColor: "rgba(249,168,212,0.4)", background: "rgba(249,168,212,0.03)" }}>
+            <CardContent sx={{ py: 2 }}>
+              <div className="flex justify-between items-center mb-2">
+                <Typography variant="subtitle1" fontWeight={600} sx={{ color: "#f9a8d4" }}>
+                  Yang — {result.teamBScore}
+                </Typography>
+              </div>
+              <Divider sx={{ my: 1.5, borderColor: "rgba(249,168,212,0.2)" }} />
+              <ul className="space-y-0.5">
+                {result.teamB.map((p) => (
+                  <li key={p.id} className="flex justify-between text-sm">
+                    <span className="flex items-center gap-1">
+                      <Link href={`/profile/${encodeURIComponent((p.name ?? "").trim())}`} className="hover:text-cyan-200 hover:underline">
+                        {p.name}
+                      </Link>
+                      {registeredSet.has((p.name ?? "").trim().toLowerCase()) && (
+                        <Tooltip title="Has account" placement="top" arrow>
+                          <PersonIcon sx={{ fontSize: 16, color: "#67e8f9" }} aria-label="Has account" />
+                        </Tooltip>
+                      )}
+                    </span>
+                    <span className="font-medium">{p.rating}</span>
+                  </li>
+                ))}
+              </ul>
+            </CardContent>
+          </Card>
+        </div>
       )}
     </Box>
       )}
