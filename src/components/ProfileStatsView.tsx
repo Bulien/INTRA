@@ -19,6 +19,7 @@ export type GameStats = {
   label: string;
   averageRating?: number | null;
   averagePlacement?: number | null;
+  rank?: number | null;
 };
 
 export type FavoriteTeammate = {
@@ -53,12 +54,58 @@ export function ProfileStatsView({ stats, isOwnProfile = true }: ProfileStatsVie
 
   return (
     <Box sx={{ pb: 6 }}>
-      <Typography variant="h4" sx={{ mb: 1, color: "text.primary", fontWeight: 700 }}>
-        Profile
-      </Typography>
-      <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
-        {userName}
-      </Typography>
+      <Box
+        sx={{
+          display: "flex",
+          alignItems: "center",
+          gap: 2,
+          flexWrap: "wrap",
+          mb: 3,
+          pb: 2,
+          borderBottom: "1px solid rgba(255,255,255,0.08)",
+        }}
+      >
+        <Box
+          sx={{
+            px: 2,
+            py: 1,
+            borderRadius: 2,
+            bgcolor: "rgba(103, 232, 249, 0.08)",
+            border: "1px solid rgba(103, 232, 249, 0.25)",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 1.5,
+          }}
+        >
+          <SportsEsportsIcon sx={{ color: "#67e8f9", fontSize: 28 }} />
+          <Typography
+            component="span"
+            variant="h5"
+            sx={{
+              color: "#67e8f9",
+              fontWeight: 700,
+              letterSpacing: "0.02em",
+            }}
+          >
+            {userName || "Player"}
+          </Typography>
+          {isOwnProfile && (
+            <Typography
+              component="span"
+              variant="caption"
+              sx={{
+                color: "text.secondary",
+                fontSize: "0.7rem",
+                textTransform: "uppercase",
+                letterSpacing: "0.1em",
+                opacity: 0.9,
+              }}
+            >
+              Your profile
+            </Typography>
+          )}
+        </Box>
+      </Box>
 
       <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 3 }}>
         <SportsEsportsIcon sx={{ color: "#67e8f9", fontSize: 28 }} />
@@ -67,10 +114,7 @@ export function ProfileStatsView({ stats, isOwnProfile = true }: ProfileStatsVie
         </Typography>
       </Box>
 
-      <Typography variant="h6" sx={{ mb: 2, color: "text.primary", fontWeight: 600 }}>
-        By game
-      </Typography>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3" style={{ marginBottom: 32 }}>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3" style={{ marginBottom: 32 }}>
         {Object.entries(byGame).map(([gameKey, g]) => (
           <Card
             key={gameKey}
@@ -79,46 +123,85 @@ export function ProfileStatsView({ stats, isOwnProfile = true }: ProfileStatsVie
               borderColor: "rgba(255,255,255,0.1)",
               bgcolor: "rgba(26,26,26,0.8)",
               borderRadius: 2,
+              display: "flex",
+              flexDirection: "column",
+              "&:hover": { borderColor: "rgba(103,232,249,0.25)" },
             }}
           >
-            <CardContent sx={{ py: 2, "&:last-child": { pb: 2 } }}>
-              <Typography variant="subtitle1" sx={{ fontWeight: 700, color: "#67e8f9", mb: 1.5 }}>
-                {g.label}
-              </Typography>
-              <Box sx={{ display: "flex", flexWrap: "wrap", gap: 2 }}>
-                <Typography variant="body2" color="text.secondary">
-                  Games: <strong style={{ color: "#e5e5e5" }}>{g.gamesPlayed}</strong>
-                </Typography>
+            <CardContent sx={{ py: 2, px: 2, "&:last-child": { pb: 2 }, flex: 1, display: "flex", flexDirection: "column" }}>
+              <Box
+                component="dl"
+                sx={{
+                  display: "grid",
+                  gridTemplateColumns: "auto 1fr",
+                  columnGap: 1.5,
+                  rowGap: 0.75,
+                  alignItems: "baseline",
+                  m: 0,
+                  flex: 1,
+                  "& > dt": { color: "text.secondary", fontSize: "0.8125rem", minWidth: 0 },
+                  "& > dd": { m: 0, fontSize: "0.8125rem", fontWeight: 600 },
+                }}
+              >
+                <Box component="dt" sx={{ gridColumn: "1 / -1", color: "#67e8f9 !important", fontWeight: 700, fontSize: "0.9375rem !important", mb: 0.25 }}>
+                  {g.label}
+                </Box>
+                {g.rank != null && (
+                  <>
+                    <Box component="dt">Rank</Box>
+                    <Box component="dd" sx={{ color: "#a5f3fc" }}>#{g.rank}</Box>
+                  </>
+                )}
+                <Box component="dt">Games</Box>
+                <Box component="dd" sx={{ color: "#e5e5e5" }}>{g.gamesPlayed}</Box>
                 {gameKey === "sc" ? (
                   g.averagePlacement != null && (
-                    <Typography variant="body2" color="text.secondary">
-                      Avg placement: <strong style={{ color: "#e5e5e5" }}>{g.averagePlacement}</strong>
-                    </Typography>
+                    <>
+                      <Box component="dt">Avg placement</Box>
+                      <Box component="dd" sx={{ color: "#e5e5e5" }}>{g.averagePlacement}</Box>
+                    </>
                   )
                 ) : (
                   <>
-                    <Typography variant="body2" color="text.secondary">
-                      Wins: <strong style={{ color: "#86efac" }}>{g.wins}</strong>
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      Losses: <strong style={{ color: "#fca5a5" }}>{g.losses}</strong>
-                    </Typography>
+                    <Box component="dt">Wins</Box>
+                    <Box component="dd" sx={{ color: "#86efac" }}>{g.wins}</Box>
+                    <Box component="dt">Losses</Box>
+                    <Box component="dd" sx={{ color: "#fca5a5" }}>{g.losses}</Box>
                     {g.winrate !== null && (
-                      <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-                        <EmojiEventsIcon sx={{ fontSize: 18, color: "#fbbf24" }} />
-                        <Typography variant="body2" sx={{ fontWeight: 600, color: "#a5f3fc" }}>
-                          Winrate: {g.winrate}%
-                        </Typography>
-                      </Box>
+                      <>
+                        <Box component="dt">Winrate</Box>
+                        <Box component="dd" sx={{ color: "#a5f3fc", display: "flex", alignItems: "center", gap: 0.5 }}>
+                          <EmojiEventsIcon sx={{ fontSize: 14, color: "#fbbf24" }} />
+                          {g.winrate}%
+                        </Box>
+                      </>
                     )}
                     {g.averageRating != null && (
-                      <Typography variant="body2" color="text.secondary">
-                        Avg rating: <strong style={{ color: "#e5e5e5" }}>{g.averageRating}</strong>
-                      </Typography>
+                      <>
+                        <Box component="dt">Avg rating</Box>
+                        <Box component="dd" sx={{ color: "#e5e5e5" }}>{g.averageRating}</Box>
+                      </>
                     )}
                   </>
                 )}
               </Box>
+              {gameKey === "sc" && g.averagePlacement != null && (
+                <Box sx={{ mt: 1.5, height: 4, borderRadius: 2, bgcolor: "rgba(255,255,255,0.08)", overflow: "hidden" }}>
+                  <Box
+                    sx={{
+                      width: `${Math.max(0, ((4 - g.averagePlacement) / 3) * 100)}%`,
+                      height: "100%",
+                      bgcolor: "#67e8f9",
+                      borderRadius: 2,
+                    }}
+                  />
+                </Box>
+              )}
+              {gameKey !== "sc" && g.winrate != null && (
+                <Box sx={{ mt: 1.5, height: 4, borderRadius: 2, bgcolor: "rgba(255,255,255,0.08)", overflow: "hidden" }}>
+                  <Box sx={{ width: `${Math.min(100, g.winrate)}%`, height: "100%", bgcolor: "#22c55e", borderRadius: 2 }} />
+                </Box>
+              )}
             </CardContent>
           </Card>
         ))}

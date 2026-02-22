@@ -27,11 +27,23 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const status = searchParams.get("status") ?? "pending";
 
-  const games = await prisma.teamBuilderGame.findMany({
-    where: { status },
-    orderBy: { createdAt: "desc" },
-    include: { createdBy: { select: { name: true, username: true } } },
-  });
+  let games: Awaited<ReturnType<typeof prisma.teamBuilderGame.findMany>>;
+  try {
+    games = await prisma.teamBuilderGame.findMany({
+      where: { status },
+      orderBy: { createdAt: "desc" },
+      include: { createdBy: { select: { name: true, username: true } } },
+    });
+  } catch (err: unknown) {
+    const prismaError = err as { code?: string; meta?: unknown };
+    if (prismaError.code === "P2022") {
+      return NextResponse.json(
+        { error: "P2022_column_missing", debug: { meta: prismaError.meta } },
+        { status: 500 }
+      );
+    }
+    throw err;
+  }
 
   const userName = (session.user.name ?? session.user.email ?? "").trim().toLowerCase();
   const filtered = games.filter((g) => {

@@ -763,13 +763,25 @@ export default function TeamBuilderPage() {
     if (!game) return;
     {
       const regSet = new Set((registeredUserNames ?? []).map((n) => String(n).trim().toLowerCase()));
-      const allReg = [...game.teamA, ...game.teamB].every(
-        (p) => (p.name ?? "").trim() === "" || regSet.has((p.name ?? "").trim().toLowerCase())
-      );
-      if (!allReg) {
-        setResultBlockedMessage("All players in the game must have an account to submit results.");
-        setTimeout(() => setResultBlockedMessage(null), 5000);
-        return;
+      const registeredInGame = [...game.teamA, ...game.teamB].filter(
+        (p) => (p.name ?? "").trim() !== "" && regSet.has((p.name ?? "").trim().toLowerCase())
+      ).length;
+      const isLolOrOw = game.gameType === "lol" || game.gameType === "ow";
+      if (isLolOrOw) {
+        if (registeredInGame < 6) {
+          setResultBlockedMessage("At least 6 players in the game must have an account to submit results for LoL/Overwatch.");
+          setTimeout(() => setResultBlockedMessage(null), 5000);
+          return;
+        }
+      } else {
+        const allReg = [...game.teamA, ...game.teamB].every(
+          (p) => (p.name ?? "").trim() === "" || regSet.has((p.name ?? "").trim().toLowerCase())
+        );
+        if (!allReg) {
+          setResultBlockedMessage("All players in the game must have an account to submit results.");
+          setTimeout(() => setResultBlockedMessage(null), 5000);
+          return;
+        }
       }
     }
     setSubmitSharedError(null);
@@ -918,9 +930,14 @@ export default function TeamBuilderPage() {
               (p) => (p.name ?? "").trim() !== "" && registeredNorm.has((p.name ?? "").trim().toLowerCase())
             ).length;
             const minRequiredThisGame = minRequiredByGame[game.gameType] ?? 6;
+            const isLolOrOw = game.gameType === "lol" || game.gameType === "ow";
             const canSubmitThisGame =
               validateUserCount >= minRequiredThisGame &&
-              (game.gameType === "sc" ? registeredInGame >= 3 : allPlayersRegistered);
+              (game.gameType === "sc"
+                ? registeredInGame >= 3
+                : isLolOrOw
+                  ? registeredInGame >= 6
+                  : allPlayersRegistered);
             const gameLabel = GAMES.find((g) => g.value === game.gameType)?.label ?? game.gameType;
             const teamAScore = game.teamA.reduce((s, p) => s + (p.rating ?? 0), 0);
             const teamBScore = game.teamB.reduce((s, p) => s + (p.rating ?? 0), 0);
@@ -938,6 +955,26 @@ export default function TeamBuilderPage() {
                   <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 2 }}>
                     {gameLabel} · Season {game.season} · by {game.createdByName}
                   </Typography>
+                  {game.gameType === "sc" ? (
+                    <Box sx={{ p: 2, borderRadius: 1, bgcolor: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", mb: 3 }}>
+                      <ul className="list-none p-0 m-0 space-y-1">
+                        {[...game.teamA, ...game.teamB].map((p) => (
+                          <li key={p.id} className="flex justify-between text-sm items-center">
+                            <span className="flex items-center gap-1">
+                              <Link href={`/profile/${encodeURIComponent((p.name ?? "").trim())}`} className="text-neutral-200 hover:text-cyan-200 hover:underline">
+                                {p.name}
+                              </Link>
+                              {registeredNorm.has((p.name ?? "").trim().toLowerCase()) && (
+                                <Tooltip title="Has account" placement="top" arrow>
+                                  <PersonIcon sx={{ fontSize: 16, color: "#67e8f9" }} aria-label="Has account" />
+                                </Tooltip>
+                              )}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </Box>
+                  ) : (
                   <div className="grid grid-cols-2 gap-4 mb-3">
                     <Box sx={{ p: 2, borderRadius: 1, bgcolor: "rgba(103,232,249,0.08)", border: "1px solid rgba(103,232,249,0.25)" }}>
                       <Typography
@@ -958,7 +995,7 @@ export default function TeamBuilderPage() {
                       >
                         Team Yin
                       </Typography>
-                      <Typography variant="subtitle1" sx={{ color: "#67e8f9", fontWeight: 700, mb: 1 }}>{game.gameType === "sc" ? "" : `— ${teamAScore} pts`}</Typography>
+                      <Typography variant="subtitle1" sx={{ color: "#67e8f9", fontWeight: 700, mb: 1 }}>{`— ${teamAScore} pts`}</Typography>
                       <ul className="list-none p-0 m-0 space-y-1">
                         {game.teamA.map((p) => (
                           <li key={p.id} className="flex justify-between text-sm">
@@ -972,7 +1009,7 @@ export default function TeamBuilderPage() {
                                 </Tooltip>
                               )}
                             </span>
-                            {game.gameType !== "sc" && <span className="font-semibold text-cyan-200">{p.rating ?? "—"}</span>}
+                            <span className="font-semibold text-cyan-200">{p.rating ?? "—"}</span>
                           </li>
                         ))}
                       </ul>
@@ -996,7 +1033,7 @@ export default function TeamBuilderPage() {
                       >
                         Team Yang
                       </Typography>
-                      <Typography variant="subtitle1" sx={{ color: "#f9a8d4", fontWeight: 700, mb: 1 }}>{game.gameType === "sc" ? "" : `— ${teamBScore} pts`}</Typography>
+                      <Typography variant="subtitle1" sx={{ color: "#f9a8d4", fontWeight: 700, mb: 1 }}>{`— ${teamBScore} pts`}</Typography>
                       <ul className="list-none p-0 m-0 space-y-1">
                         {game.teamB.map((p) => (
                           <li key={p.id} className="flex justify-between text-sm">
@@ -1010,12 +1047,13 @@ export default function TeamBuilderPage() {
                                 </Tooltip>
                               )}
                             </span>
-                            {game.gameType !== "sc" && <span className="font-semibold text-pink-200">{p.rating ?? "—"}</span>}
+                            <span className="font-semibold text-pink-200">{p.rating ?? "—"}</span>
                           </li>
                         ))}
                       </ul>
                     </Box>
                   </div>
+                  )}
                   <div className="flex gap-2 flex-wrap">
                     {isCreator && (
                       <Button
@@ -1092,7 +1130,9 @@ export default function TeamBuilderPage() {
                             ? `Result submission requires at least ${minRequiredThisGame} registered players (${validateUserCount} currently).`
                             : game.gameType === "sc"
                               ? "At least 3 players in the game must have an account to submit results."
-                              : "All players in the game must have an account to submit results."}
+                              : isLolOrOw
+                                ? "At least 6 players in the game must have an account to submit results for LoL/Overwatch."
+                                : "All players in the game must have an account to submit results."}
                         </Typography>
                         <Button
                           variant="outlined"
@@ -1657,9 +1697,14 @@ export default function TeamBuilderPage() {
                   (p) => (p.name ?? "").trim() !== "" && registeredNorm2.has((p.name ?? "").trim().toLowerCase())
                 ).length;
                 const minRequiredThisGame2 = minRequiredByGame[game.gameType] ?? 6;
+                const isLolOrOw2 = game.gameType === "lol" || game.gameType === "ow";
                 const canSubmitThisGame2 =
                   validateUserCount >= minRequiredThisGame2 &&
-                  (game.gameType === "sc" ? registeredInGame2 >= 3 : allPlayersRegistered2);
+                  (game.gameType === "sc"
+                    ? registeredInGame2 >= 3
+                    : isLolOrOw2
+                      ? registeredInGame2 >= 6
+                      : allPlayersRegistered2);
                 const gameLabel = GAMES.find((g) => g.value === game.gameType)?.label ?? game.gameType;
                 const teamAScore = game.teamA.reduce((s, p) => s + (p.rating ?? 0), 0);
                 const teamBScore = game.teamB.reduce((s, p) => s + (p.rating ?? 0), 0);
@@ -1695,6 +1740,26 @@ export default function TeamBuilderPage() {
                           </Button>
                         )}
                       </Box>
+                      {game.gameType === "sc" ? (
+                        <Box sx={{ p: 2.5, borderRadius: 1, bgcolor: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", mb: 4 }}>
+                          <ul className="list-none p-0 m-0 space-y-1 text-neutral-300">
+                            {[...game.teamA, ...game.teamB].map((p) => (
+                              <li key={p.id} className="flex justify-between text-base items-center">
+                                <span className="flex items-center gap-1">
+                                  <Link href={`/profile/${encodeURIComponent((p.name ?? "").trim())}`} className="hover:text-cyan-200 hover:underline">
+                                    {p.name}
+                                  </Link>
+                                  {registeredNorm2.has((p.name ?? "").trim().toLowerCase()) && (
+                                    <Tooltip title="Has account" placement="top" arrow>
+                                      <PersonIcon sx={{ fontSize: 16, color: "#67e8f9" }} aria-label="Has account" />
+                                    </Tooltip>
+                                  )}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        </Box>
+                      ) : (
                       <div className="grid grid-cols-2 gap-4 mb-4">
                         <Box sx={{ p: 2.5, borderRadius: 1, bgcolor: "rgba(103,232,249,0.1)", border: "1px solid rgba(103,232,249,0.3)" }}>
                           <Typography
@@ -1715,7 +1780,7 @@ export default function TeamBuilderPage() {
                           >
                             Team Yin
                           </Typography>
-                          <Typography variant="subtitle1" sx={{ color: "#67e8f9", fontWeight: 700, mb: 1 }}>{game.gameType === "sc" ? "" : `— ${teamAScore} pts`}</Typography>
+                          <Typography variant="subtitle1" sx={{ color: "#67e8f9", fontWeight: 700, mb: 1 }}>{`— ${teamAScore} pts`}</Typography>
                           <ul className="list-none p-0 m-0 space-y-1 text-neutral-300">
                             {game.teamA.map((p) => (
                               <li key={p.id} className="flex justify-between text-base">
@@ -1729,7 +1794,7 @@ export default function TeamBuilderPage() {
                                     </Tooltip>
                                   )}
                                 </span>
-                                {game.gameType !== "sc" && <span className="font-semibold text-cyan-200">{p.rating ?? "—"}</span>}
+                                <span className="font-semibold text-cyan-200">{p.rating ?? "—"}</span>
                               </li>
                             ))}
                           </ul>
@@ -1753,7 +1818,7 @@ export default function TeamBuilderPage() {
                           >
                             Team Yang
                           </Typography>
-                          <Typography variant="subtitle1" sx={{ color: "#f9a8d4", fontWeight: 700, mb: 1 }}>{game.gameType === "sc" ? "" : `— ${teamBScore} pts`}</Typography>
+                          <Typography variant="subtitle1" sx={{ color: "#f9a8d4", fontWeight: 700, mb: 1 }}>{`— ${teamBScore} pts`}</Typography>
                           <ul className="list-none p-0 m-0 space-y-1 text-neutral-300">
                             {game.teamB.map((p) => (
                               <li key={p.id} className="flex justify-between text-base">
@@ -1767,12 +1832,13 @@ export default function TeamBuilderPage() {
                                     </Tooltip>
                                   )}
                                 </span>
-                                {game.gameType !== "sc" && <span className="font-semibold text-pink-200">{p.rating ?? "—"}</span>}
+                                <span className="font-semibold text-pink-200">{p.rating ?? "—"}</span>
                               </li>
                             ))}
                           </ul>
                         </Box>
                       </div>
+                      )}
                       <div className="flex gap-2">
                         {canSubmitThisGame2 ? (
                           game.gameType === "sc" ? (
@@ -1834,7 +1900,9 @@ export default function TeamBuilderPage() {
                                 ? `Result submission requires at least ${minRequiredThisGame2} registered players (${validateUserCount} currently).`
                                 : game.gameType === "sc"
                                   ? "At least 3 players in the game must have an account to submit results."
-                                  : "All players in the game must have an account to submit results."}
+                                  : isLolOrOw2
+                                    ? "At least 6 players in the game must have an account to submit results for LoL/Overwatch."
+                                    : "All players in the game must have an account to submit results."}
                             </Typography>
                             <Button
                               variant="outlined"

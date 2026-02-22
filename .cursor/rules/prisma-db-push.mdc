@@ -1,0 +1,18 @@
+---
+description: Prisma db push — always use local first, then production
+alwaysApply: true
+---
+
+# Prisma database push
+
+- **This project uses `.env` for production (Neon) and `.env.local` for local Postgres.**
+
+When you tell the user to run Prisma schema sync / push to the database:
+
+1. **Always instruct them to push to LOCAL first:**  
+   Use `npm run db:push` (which runs with `.env.local`). Have them run it and confirm it works.
+
+2. **Only after local push works**, remind them they can push to production if they intend to deploy schema changes:  
+   `npm run db:push:prod` (uses `.env`). Do not suggest this before local is verified.
+
+Never suggest a bare `npx prisma db push` without specifying the env file; the default would use `.env` (production) and can cause production DB issues.

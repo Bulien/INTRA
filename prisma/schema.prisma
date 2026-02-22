@@ -13,15 +13,14 @@ model Account {
   type              String
   provider          String
   providerAccountId String
-  refresh_token     String? @db.Text
-  access_token      String? @db.Text
-  expires_at       Int?
-  token_type       String?
-  scope            String?
-  id_token         String? @db.Text
-  session_state    String?
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([provider, providerAccountId])
 }
@@ -31,25 +30,23 @@ model Session {
   sessionToken String   @unique
   userId       String
   expires      DateTime
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model User {
-  id            String    @id @default(cuid())
-  username      String?   @unique
-  name          String?
-  email         String?   @unique
-  emailVerified DateTime?
-  image         String?
-  password      String?
-  role          String    @default("user") // "admin" | "user"
-  bannedUntil   DateTime?
-  createdAt     DateTime  @default(now())
-
-  accounts Account[]
-  sessions Session[]
-  gameResults GameResult[]
+  id                      String            @id @default(cuid())
+  username                String?           @unique
+  name                    String?
+  email                   String?           @unique
+  emailVerified           DateTime?
+  image                   String?
+  password                String?
+  role                    String            @default("user")
+  bannedUntil             DateTime?
+  createdAt               DateTime          @default(now())
+  accounts                Account[]
+  gameResults             GameResult[]
+  sessions                Session[]
   teamBuilderGamesCreated TeamBuilderGame[]
 }
 
@@ -75,8 +72,7 @@ model GameResult {
   gameType  String
   score     Float
   createdAt DateTime @default(now())
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, gameType])
   @@index([gameType])
@@ -87,7 +83,7 @@ model RankingPlayer {
   name      String
   gameType  String
   season    Int      @default(1)
-  scores    String   @default("[]") @db.Text
+  scores    String   @default("[]")
   updatedAt DateTime @updatedAt
 
   @@unique([name, gameType, season])
@@ -95,15 +91,16 @@ model RankingPlayer {
 }
 
 model GameSeason {
-  gameType   String @id
-  maxSeason  Int    @default(1)
+  gameType  String @id
+  maxSeason Int    @default(1)
 }
 
 model SeasonMeta {
-  gameType            String
-  season              Int
-  validatedIndices    String   @default("[]") @db.Text
-  validatedPlayerIds  String   @default("[]") @db.Text
+  gameType           String
+  season             Int
+  validatedIndices   String @default("[]")
+  validatedPlayerIds String @default("[]")
+
   @@id([gameType, season])
 }
 
@@ -112,13 +109,12 @@ model TeamBuilderGame {
   gameType    String
   season      Int
   createdById String
-  teamA       String   @db.Text
-  teamB       String   @db.Text
+  teamA       String
+  teamB       String
   status      String   @default("pending")
   winner      String?
   createdAt   DateTime @default(now())
-
-  createdBy User @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  createdBy   User     @relation(fields: [createdById], references: [id], onDelete: Cascade)
 
   @@index([status])
   @@index([createdAt])

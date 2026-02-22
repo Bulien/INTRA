@@ -286,21 +286,35 @@ export async function POST(
 
     await recordPlacementsToRanking(game.gameType, game.season, placementsForRanking);
 
+    const scPlacementsJson = JSON.stringify(
+      placements.map((e) => ({ playerName: (e.playerName ?? "").trim(), placement: Math.round(Number(e.placement)) }))
+    );
     await prisma.teamBuilderGame.update({
       where: { id },
-      data: { status: "result_submitted", winner: null },
+      data: { status: "result_submitted", winner: null, scPlacements: scPlacementsJson },
     });
 
     return NextResponse.json({ success: true, placements: true });
   }
 
-  // Team games: all players must be registered
-  const allPlayersRegistered = playerNames.every((n) => registeredNorm.has(n));
-  if (!allPlayersRegistered) {
-    return NextResponse.json(
-      { error: "All players in the game must have an account to submit results." },
-      { status: 403 }
-    );
+  // Team games: LoL/OW need 6+ registered in game; Battlerite still requires all registered
+  const registeredInGame = playerNames.filter((n) => registeredNorm.has(n)).length;
+  const isLolOrOw = game.gameType === "lol" || game.gameType === "ow";
+  if (isLolOrOw) {
+    if (registeredInGame < 6) {
+      return NextResponse.json(
+        { error: "At least 6 players in the game must have an account to submit results for LoL/Overwatch." },
+        { status: 403 }
+      );
+    }
+  } else {
+    const allPlayersRegistered = playerNames.every((n) => registeredNorm.has(n));
+    if (!allPlayersRegistered) {
+      return NextResponse.json(
+        { error: "All players in the game must have an account to submit results." },
+        { status: 403 }
+      );
+    }
   }
 
   // Team games: winner yin | yang
@@ -325,7 +339,14 @@ export async function POST(
   const winningNames = winner === "yin" ? teamA.map((p) => p.name) : teamB.map((p) => p.name);
   const losingNames = winner === "yin" ? teamB.map((p) => p.name) : teamA.map((p) => p.name);
 
-  await recordWinToRanking(game.gameType, game.season, winningNames, losingNames);
+  // For LoL/OW with unregistered players, only record ranking for registered players
+  const winningForRanking = isLolOrOw
+    ? winningNames.filter((name) => registeredNorm.has((name ?? "").trim().toLowerCase()))
+    : winningNames;
+  const losingForRanking = isLolOrOw
+    ? losingNames.filter((name) => registeredNorm.has((name ?? "").trim().toLowerCase()))
+    : losingNames;
+  await recordWinToRanking(game.gameType, game.season, winningForRanking, losingForRanking);
 
   const ratingInserts = allPlayers.map((p) => ({
     playerName: (p.name ?? "").trim().toLowerCase(),

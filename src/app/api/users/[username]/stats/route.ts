@@ -42,7 +42,7 @@ export async function GET(
 
   const byGame: Record<
     string,
-    { gamesPlayed: number; wins: number; losses: number; winrate: number | null; label: string; averageRating: number | null; averagePlacement: number | null }
+    { gamesPlayed: number; wins: number; losses: number; winrate: number | null; label: string; averageRating: number | null; averagePlacement: number | null; rank: number | null }
   > = {};
 
   const avgRows = await (prisma as unknown as {
@@ -90,6 +90,25 @@ export async function GET(
       winrate = gamesPlayed > 0 ? Math.round((wins / gamesPlayed) * 100) : null;
     }
 
+    // Ladder rank: same sort as leaderboard (SC by avgPlace asc, others by wins desc)
+    const withSortKey = players.map((p) => {
+      const s = (JSON.parse(p.scores || "[]") as (number | null)[]);
+      if (gameType === "sc") {
+        const placeScores = s.filter((x): x is number => x !== null && x >= 1 && x <= 4);
+        const avg = placeScores.length > 0 ? placeScores.reduce((a, b) => a + b, 0) / placeScores.length : 999;
+        return { name: p.name, sortKey: avg, nameLower: normalizeName(p.name) };
+      }
+      const w = s.filter((x) => x === 1).length;
+      return { name: p.name, sortKey: w, nameLower: normalizeName(p.name) };
+    });
+    if (gameType === "sc") {
+      withSortKey.sort((a, b) => a.sortKey - b.sortKey || (a.name ?? "").localeCompare(b.name ?? ""));
+    } else {
+      withSortKey.sort((a, b) => b.sortKey - a.sortKey || (a.name ?? "").localeCompare(b.name ?? ""));
+    }
+    const rankIndex = withSortKey.findIndex((p) => p.nameLower === userName);
+    const rank = rankIndex >= 0 ? rankIndex + 1 : null;
+
     byGame[gameType] = {
       gamesPlayed,
       wins,
@@ -98,6 +117,7 @@ export async function GET(
       label: GAME_LABELS[gameType] ?? gameType,
       averageRating: gameType === "sc" ? null : (avgByGame[gameType] ?? null),
       averagePlacement: gameType === "sc" ? averagePlacement : null,
+      rank,
     };
   }
 

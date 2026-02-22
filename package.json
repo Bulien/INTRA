@@ -9,7 +9,9 @@
     "start": "next start",
     "lint": "next lint",
     "db:generate": "prisma generate",
-    "db:push": "prisma db push",
+    "db:push": "dotenv -e .env.local -- prisma db push",
+    "db:push:prod": "dotenv -e .env -- prisma db push",
+    "db:pull-from-neon": "dotenv -e .env.neon -- prisma db pull",
     "db:studio": "dotenv -e .env.local -- prisma studio",
     "games:cancel-all": "node scripts/cancel-pending-games.mjs",
     "set-admin": "node scripts/set-admin.mjs"
