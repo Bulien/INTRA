@@ -1,12 +1,14 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
 import SearchIcon from "@mui/icons-material/Search";
 import PersonIcon from "@mui/icons-material/Person";
 import CloseIcon from "@mui/icons-material/Close";
+import SportsEsportsIcon from "@mui/icons-material/SportsEsports";
 
 type SearchUser = { id: string; username: string; name: string };
 
@@ -20,6 +22,19 @@ const navLinks = [
   { href: "/team-builder", label: "Team Builder" },
   { href: "/ranking", label: "Ranking" },
 ];
+
+const QUEUE_GAMES = [
+  { id: "lol", label: "League of Legends" },
+  { id: "ow", label: "Overwatch" },
+  { id: "sc", label: "Survival Chaos" },
+  { id: "battlerite", label: "Battlerite" },
+] as const;
+
+type QueueData = {
+  myEntry: { gameType: string; joinedAt: string; label: string } | null;
+  playersByGame: Record<string, { id: string; name: string | null; username: string | null; gameType: string; joinedAt: string }[]>;
+  gameLabels: Record<string, string>;
+};
 
 function isAdmin(session: { user?: { role?: string } | null } | null): boolean {
   return (session?.user as { role?: string } | undefined)?.role === "admin";
@@ -35,8 +50,13 @@ export function Navbar() {
   const [searchLoading, setSearchLoading] = useState(false);
   const [completionIndex, setCompletionIndex] = useState(0);
   const [activeGamesCount, setActiveGamesCount] = useState(0);
+  const [playModalOpen, setPlayModalOpen] = useState(false);
+  const [queueData, setQueueData] = useState<QueueData | null>(null);
+  const [queueMenuOpen, setQueueMenuOpen] = useState(false);
+  const [queueTimerSeconds, setQueueTimerSeconds] = useState(0);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const searchContainerRef = useRef<HTMLDivElement>(null);
+  const queueMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (status !== "authenticated" || !session?.user) {
@@ -53,6 +73,73 @@ export function Navbar() {
     const interval = setInterval(fetchCount, 15000);
     return () => clearInterval(interval);
   }, [status, session?.user]);
+
+  const fetchQueue = useCallback(async () => {
+    const res = await fetch("/api/queue", { cache: "no-store" });
+    if (!res.ok) return;
+    const data = await res.json();
+    setQueueData({
+      myEntry: data.myEntry ?? null,
+      playersByGame: data.playersByGame ?? { lol: [], ow: [], sc: [], battlerite: [] },
+      gameLabels: data.gameLabels ?? {},
+    });
+  }, []);
+
+  useEffect(() => {
+    if (status !== "authenticated" || !session?.user) {
+      setQueueData(null);
+      return;
+    }
+    fetchQueue();
+    const interval = setInterval(fetchQueue, 4000);
+    return () => clearInterval(interval);
+  }, [status, session?.user, fetchQueue]);
+
+  useEffect(() => {
+    if (!queueData?.myEntry) {
+      setQueueTimerSeconds(0);
+      return;
+    }
+    const joined = new Date(queueData.myEntry.joinedAt).getTime();
+    const tick = () => setQueueTimerSeconds(Math.floor((Date.now() - joined) / 1000));
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [queueData?.myEntry?.joinedAt]);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (queueMenuRef.current && !queueMenuRef.current.contains(e.target as Node)) setQueueMenuOpen(false);
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const handleJoinQueue = async (gameType: string) => {
+    const res = await fetch("/api/queue/join", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ gameType }),
+    });
+    if (res.ok) {
+      setPlayModalOpen(false);
+      fetchQueue();
+    }
+  };
+
+  const handleLeaveQueue = async () => {
+    const res = await fetch("/api/queue/leave", { method: "POST" });
+    if (res.ok) {
+      setQueueMenuOpen(false);
+      fetchQueue();
+    }
+  };
+
+  const formatTimer = (s: number) => {
+    const m = Math.floor(s / 60);
+    const sec = s % 60;
+    return `${m}:${sec.toString().padStart(2, "0")}`;
+  };
 
   useEffect(() => {
     if (searchOpen) {
@@ -154,15 +241,116 @@ export function Navbar() {
 
   return (
     <nav className="border-b border-cyan-500/20 bg-black/80 backdrop-blur-sm sticky top-0 z-50">
+      {session && queueData && (
+        <div
+          className="fixed top-0 right-0 z-[60] h-14 flex items-center pr-4 border-b border-cyan-500/20 bg-black/80 backdrop-blur-sm pl-6"
+          ref={queueMenuRef}
+        >
+          <button
+            type="button"
+            onClick={() => setQueueMenuOpen((o) => !o)}
+            className={`flex items-center gap-2 px-2.5 py-1.5 rounded-md text-sm font-medium transition-colors ${
+              queueData.myEntry
+                ? "bg-red-500/20 text-red-300 border border-red-400/50 hover:bg-red-500/30 shadow-[0_0_14px_rgba(239,68,68,0.35)]"
+                : "text-neutral-400 hover:text-cyan-200 hover:bg-cyan-500/10 border border-white/10"
+            }`}
+          >
+            {queueData.myEntry ? (
+              <>
+                <span className="font-semibold">In queue · {queueData.myEntry.label}</span>
+                <span className="tabular-nums font-mono text-red-200" aria-label="Time in queue">
+                  {formatTimer(queueTimerSeconds)}
+                </span>
+              </>
+            ) : (
+              <>
+                <span className="font-medium">Queue</span>
+                {(() => {
+                  const total = (["lol", "ow", "sc", "battlerite"] as const).reduce(
+                    (s, g) => s + (queueData.playersByGame[g]?.length ?? 0),
+                    0
+                  );
+                  return total > 0 ? (
+                    <span className="flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-cyan-500/30 px-1.5 text-xs font-bold text-cyan-200">
+                      {total > 99 ? "99+" : total}
+                    </span>
+                  ) : null;
+                })()}
+              </>
+            )}
+          </button>
+          {queueMenuOpen && (
+            <div className="absolute top-full right-4 mt-1 w-72 max-h-80 overflow-auto rounded-lg border border-cyan-500/30 bg-black/95 shadow-xl z-[100]">
+              <div className="p-2 border-b border-white/10 flex items-center justify-between">
+                <span className="text-sm font-semibold text-cyan-200">Players in queue</span>
+                {queueData.myEntry && (
+                  <button
+                    type="button"
+                    onClick={handleLeaveQueue}
+                    className="text-xs px-2 py-1 rounded text-neutral-400 hover:text-red-300 hover:bg-red-500/20 transition-colors"
+                  >
+                    Leave queue
+                  </button>
+                )}
+              </div>
+              <div className="p-2 space-y-3">
+                {(["lol", "ow", "sc", "battlerite"] as const).map((gameType) => {
+                  const players = queueData.playersByGame[gameType] ?? [];
+                  const label = queueData.gameLabels[gameType] ?? gameType;
+                  if (players.length === 0) return null;
+                  return (
+                    <div key={gameType}>
+                      <div className="text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-1">
+                        {label}
+                      </div>
+                      <ul className="space-y-0.5">
+                        {players.map((p) => (
+                          <li key={p.id}>
+                            <Link
+                              href={`/profile/${encodeURIComponent((p.username ?? p.name ?? "").trim() || "?")}`}
+                              className="block px-2 py-1 rounded text-sm text-neutral-200 hover:bg-white/10 hover:text-cyan-200 transition-colors truncate"
+                              onClick={() => setQueueMenuOpen(false)}
+                            >
+                              {p.name ?? p.username ?? "—"}
+                            </Link>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  );
+                })}
+                {(["lol", "ow", "sc", "battlerite"] as const).every(
+                  (g) => (queueData.playersByGame[g]?.length ?? 0) === 0
+                ) && (
+                  <p className="text-sm text-neutral-500 py-2 text-center">No one in queue</p>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
       <div className="container mx-auto px-4 max-w-5xl">
         <div className="flex items-center justify-between h-14">
-          <Link
-            href="/"
-            className="text-lg font-semibold text-white hover:text-cyan-300 transition-colors flex items-center gap-1.5"
-          >
-            <img src="/yin-yang.png" alt="" aria-hidden className="h-6 w-6 block bg-transparent mix-blend-multiply" />
-            INTRA
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link
+              href="/"
+              className="text-lg font-semibold text-white hover:text-cyan-300 transition-colors flex items-center gap-1.5"
+            >
+              <img src="/yin-yang.png" alt="" aria-hidden className="h-6 w-6 block bg-transparent mix-blend-multiply" />
+              INTRA
+            </Link>
+            {session && (
+              <button
+                type="button"
+                onClick={() => setPlayModalOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium text-orange-200 bg-orange-950/80 hover:bg-orange-900/90 border border-orange-500/60 shadow-[0_0_12px_rgba(234,88,12,0.35)] hover:shadow-[0_0_16px_rgba(234,88,12,0.45)] transition-all"
+                aria-label="Join queue to play"
+              >
+                <SportsEsportsIcon sx={{ fontSize: 18 }} />
+                Play
+              </button>
+            )}
+          </div>
 
           <div className="flex items-center gap-1">
             {isAdmin(session) && (
@@ -325,6 +513,50 @@ export function Navbar() {
           </div>
         </div>
       </div>
+
+      {playModalOpen &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[200] bg-black/50 backdrop-blur-md"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="play-modal-title"
+            onClick={() => setPlayModalOpen(false)}
+          >
+            <div
+              className="fixed left-1/2 w-full max-w-sm mx-4 bg-neutral-900 border border-orange-500/40 rounded-xl shadow-2xl shadow-orange-900/20 p-6 -translate-x-1/2 -translate-y-1/2"
+              style={{ top: "calc(28px + 50vh)", margin: 0 }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h2 id="play-modal-title" className="text-lg font-bold text-white mb-1 flex items-center gap-2">
+                <SportsEsportsIcon sx={{ color: "#f97316" }} />
+                Choose game
+              </h2>
+              <p className="text-sm text-neutral-400 mb-4">You will be added to the queue for this game.</p>
+              <div className="grid grid-cols-1 gap-2">
+                {QUEUE_GAMES.map((g) => (
+                  <button
+                    key={g.id}
+                    type="button"
+                    onClick={() => handleJoinQueue(g.id)}
+                    className="px-4 py-3 rounded-lg text-left font-medium text-white bg-white/5 hover:bg-orange-500/20 border border-white/10 hover:border-orange-500/50 transition-colors"
+                  >
+                    {g.label}
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={() => setPlayModalOpen(false)}
+                className="mt-4 w-full py-2 rounded-lg text-sm text-neutral-400 hover:text-white hover:bg-white/10 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>,
+          document.body
+        )}
     </nav>
   );
 }

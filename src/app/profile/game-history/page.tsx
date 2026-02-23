@@ -59,6 +59,10 @@ function formatDate(iso: string): string {
   }
 }
 
+function normalizeName(s: string): string {
+  return (s ?? "").trim().toLowerCase();
+}
+
 export default function ProfileGameHistoryPage() {
   const { data: session, status } = useSession();
   const [games, setGames] = useState<GameHistoryEntry[]>([]);
@@ -102,6 +106,9 @@ export default function ProfileGameHistoryPage() {
     gameFilter === "all" ? games : games.filter((g) => g.gameType === gameFilter);
   const displayedGames = filteredGames.slice(0, displayLimit);
   const hasMore = filteredGames.length > displayLimit;
+  const viewedPlayerName = (session?.user?.name ?? session?.user?.email ?? "").trim();
+  const isViewedPlayer = (name: string) =>
+    viewedPlayerName && normalizeName(name) === normalizeName(viewedPlayerName);
 
   return (
     <Box sx={{ pb: 6 }}>
@@ -247,6 +254,7 @@ export default function ProfileGameHistoryPage() {
                       <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
                         {(g.scPlacements ?? []).map(({ playerName, placement }) => {
                           const label = placement === 1 ? "1st" : placement === 2 ? "2nd" : placement === 3 ? "3rd" : `${placement}th`;
+                          const isYou = isViewedPlayer(playerName);
                           return (
                             <Box
                               key={`${playerName}-${placement}`}
@@ -257,7 +265,8 @@ export default function ProfileGameHistoryPage() {
                                 py: 0.5,
                                 px: 1.25,
                                 borderRadius: 1,
-                                bgcolor: "rgba(255,255,255,0.04)",
+                                bgcolor: isYou ? "rgba(251, 191, 36, 0.15)" : "rgba(255,255,255,0.04)",
+                                border: isYou ? "1px solid rgba(251, 191, 36, 0.5)" : "none",
                               }}
                             >
                               <Typography variant="caption" sx={{ fontWeight: 700, color: "text.secondary", minWidth: 28 }}>
@@ -265,7 +274,12 @@ export default function ProfileGameHistoryPage() {
                               </Typography>
                               <Link
                                 href={`/profile/${encodeURIComponent(playerName)}`}
-                                style={{ textDecoration: "none", color: "#67e8f9", fontWeight: 500, fontSize: "0.875rem" }}
+                                style={{
+                                  textDecoration: "none",
+                                  color: isYou ? "#fbbf24" : "#67e8f9",
+                                  fontWeight: isYou ? 700 : 500,
+                                  fontSize: "0.875rem",
+                                }}
                                 className="hover:underline"
                               >
                                 {playerName || "—"}
@@ -295,27 +309,31 @@ export default function ProfileGameHistoryPage() {
                           Yin
                         </Typography>
                         <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.75 }}>
-                          {(g.teamYin ?? []).map((p, i) => (
-                            <Link
-                              key={i}
-                              href={`/profile/${encodeURIComponent(p.name)}`}
-                              style={{ textDecoration: "none" }}
-                              className="hover:underline"
-                            >
-                              <Chip
-                                label={p.name || "—"}
-                                size="small"
-                                sx={{
-                                  height: 24,
-                                  fontSize: "0.8125rem",
-                                  bgcolor: "rgba(103, 232, 249, 0.12)",
-                                  color: "#a5f3fc",
-                                  border: "none",
-                                  "&:hover": { bgcolor: "rgba(103, 232, 249, 0.2)" },
-                                }}
-                              />
-                            </Link>
-                          ))}
+                          {(g.teamYin ?? []).map((p, i) => {
+                            const isYou = isViewedPlayer(p.name);
+                            return (
+                              <Link
+                                key={i}
+                                href={`/profile/${encodeURIComponent(p.name)}`}
+                                style={{ textDecoration: "none" }}
+                                className="hover:underline"
+                              >
+                                <Chip
+                                  label={p.name || "—"}
+                                  size="small"
+                                  sx={{
+                                    height: 24,
+                                    fontSize: "0.8125rem",
+                                    bgcolor: isYou ? "rgba(251, 191, 36, 0.25)" : "rgba(103, 232, 249, 0.12)",
+                                    color: isYou ? "#fcd34d" : "#a5f3fc",
+                                    border: isYou ? "2px solid rgba(251, 191, 36, 0.7)" : "none",
+                                    fontWeight: isYou ? 700 : undefined,
+                                    "&:hover": { bgcolor: isYou ? "rgba(251, 191, 36, 0.35)" : "rgba(103, 232, 249, 0.2)" },
+                                  }}
+                                />
+                              </Link>
+                            );
+                          })}
                         </Box>
                       </Box>
                       <Box
@@ -332,27 +350,31 @@ export default function ProfileGameHistoryPage() {
                           Yang
                         </Typography>
                         <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.75 }}>
-                          {(g.teamYang ?? []).map((p, i) => (
-                            <Link
-                              key={i}
-                              href={`/profile/${encodeURIComponent(p.name)}`}
-                              style={{ textDecoration: "none" }}
-                              className="hover:underline"
-                            >
-                              <Chip
-                                label={p.name || "—"}
-                                size="small"
-                                sx={{
-                                  height: 24,
-                                  fontSize: "0.8125rem",
-                                  bgcolor: "rgba(249, 168, 212, 0.12)",
-                                  color: "#fbcfe8",
-                                  border: "none",
-                                  "&:hover": { bgcolor: "rgba(249, 168, 212, 0.2)" },
-                                }}
-                              />
-                            </Link>
-                          ))}
+                          {(g.teamYang ?? []).map((p, i) => {
+                            const isYou = isViewedPlayer(p.name);
+                            return (
+                              <Link
+                                key={i}
+                                href={`/profile/${encodeURIComponent(p.name)}`}
+                                style={{ textDecoration: "none" }}
+                                className="hover:underline"
+                              >
+                                <Chip
+                                  label={p.name || "—"}
+                                  size="small"
+                                  sx={{
+                                    height: 24,
+                                    fontSize: "0.8125rem",
+                                    bgcolor: isYou ? "rgba(251, 191, 36, 0.25)" : "rgba(249, 168, 212, 0.12)",
+                                    color: isYou ? "#fcd34d" : "#fbcfe8",
+                                    border: isYou ? "2px solid rgba(251, 191, 36, 0.7)" : "none",
+                                    fontWeight: isYou ? 700 : undefined,
+                                    "&:hover": { bgcolor: isYou ? "rgba(251, 191, 36, 0.35)" : "rgba(249, 168, 212, 0.2)" },
+                                  }}
+                                />
+                              </Link>
+                            );
+                          })}
                         </Box>
                       </Box>
                     </Box>

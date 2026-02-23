@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { computeElo } from "@/lib/elo";
 import { prisma } from "@/lib/prisma";
+import { replayElo, BASE_ELO } from "@/lib/eloReplay";
 
 const GAME_TYPES = ["lol", "ow", "sc", "battlerite"] as const;
+const TEAM_GAMES = ["lol", "ow", "battlerite"] as const;
 const GAME_LABELS: Record<string, string> = {
   lol: "League of Legends",
   ow: "Overwatch",
@@ -76,7 +77,30 @@ export async function GET() {
       winrate = gamesPlayed > 0 ? Math.round((wins / gamesPlayed) * 100) : null;
     }
 
-    // Ladder rank: same sort as leaderboard (SC by avgPlace asc, team games by Elo desc)
+    // Ladder rank: same sort as leaderboard (SC by avgPlace asc, team games by match-based Elo desc)
+    let replayElos: Record<string, number> = {};
+    if (TEAM_GAMES.includes(gameType as (typeof TEAM_GAMES)[number])) {
+      const teamGames = await prisma.teamBuilderGame.findMany({
+        where: { gameType, season, status: "result_submitted" },
+        orderBy: { createdAt: "asc" },
+        select: { id: true, teamA: true, teamB: true, winner: true, createdAt: true },
+      });
+      const replayGames = teamGames.map((g) => {
+        const teamA = (JSON.parse(g.teamA) as { name?: string }[]).map((p) => (p.name ?? "").trim()).filter(Boolean);
+        const teamB = (JSON.parse(g.teamB) as { name?: string }[]).map((p) => (p.name ?? "").trim()).filter(Boolean);
+        return {
+          id: g.id,
+          gameType,
+          season,
+          teamA,
+          teamB,
+          winner: g.winner as "yin" | "yang" | null,
+          createdAt: g.createdAt,
+        };
+      });
+      replayElos = replayElo(replayGames).elos;
+    }
+
     const withSortKey = players.map((p) => {
       const s = (JSON.parse(p.scores || "[]") as (number | null)[]);
       if (gameType === "sc") {
@@ -84,9 +108,8 @@ export async function GET() {
         const avg = placeScores.length > 0 ? placeScores.reduce((a, b) => a + b, 0) / placeScores.length : 999;
         return { name: p.name, sortKey: avg, nameLower: normalizeName(p.name) };
       }
-      const w = s.filter((x) => x === 1).length;
-      const l = s.filter((x) => x === 0).length;
-      return { name: p.name, sortKey: computeElo(w, l), nameLower: normalizeName(p.name) };
+      const sortKey = replayElos[normalizeName(p.name)] ?? BASE_ELO;
+      return { name: p.name, sortKey, nameLower: normalizeName(p.name) };
     });
     if (gameType === "sc") {
       withSortKey.sort((a, b) => a.sortKey - b.sortKey || (a.name ?? "").localeCompare(b.name ?? ""));
@@ -96,7 +119,7 @@ export async function GET() {
     const rankIndex = withSortKey.findIndex((p) => p.nameLower === userName);
     const rank = rankIndex >= 0 ? rankIndex + 1 : null;
 
-    const elo = gameType === "sc" ? null : computeElo(wins, losses);
+    const elo = gameType === "sc" ? null : (replayElos[userName] ?? (gamesPlayed > 0 ? BASE_ELO : null));
     byGame[gameType] = {
       gamesPlayed,
       wins,

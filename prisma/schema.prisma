@@ -48,6 +48,41 @@ model User {
   gameResults             GameResult[]
   sessions                Session[]
   teamBuilderGamesCreated TeamBuilderGame[]
+  queueEntry              QueueEntry?
+  chatMessagesSent        ChatMessage[]
+  chatChannelMembers     ChatChannelMember[]
+  closedDms              UserClosedDm[]
+  channelReads          UserChannelRead[]
+}
+
+model UserClosedDm {
+  id        String   @id @default(cuid())
+  userId    String
+  channelId String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, channelId])
+  @@index([userId])
+}
+
+model UserChannelRead {
+  id        String   @id @default(cuid())
+  userId    String
+  channelId String
+  readAt    DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, channelId])
+  @@index([userId])
+}
+
+model QueueEntry {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  gameType  String
+  joinedAt  DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([gameType])
 }
 
 model VerificationToken {
@@ -129,4 +164,43 @@ model PlayerGameRating {
   createdAt  DateTime @default(now())
 
   @@index([playerName, gameType])
+}
+
+model ChatChannel {
+  id            String              @id @default(cuid())
+  type          String              // "game" | "dm" | "group"
+  name          String?             // optional name for group
+  gameType      String?             // lol, ow, sc, battlerite (when type=game)
+  dmUser1Id     String?             // for dm: smaller id
+  dmUser2Id     String?             // for dm: larger id
+  lastMessageAt DateTime?
+  messages      ChatMessage[]
+  members       ChatChannelMember[]
+
+  @@unique([type, gameType])
+  @@index([type, dmUser1Id, dmUser2Id])
+  @@index([type])
+}
+
+model ChatChannelMember {
+  id        String      @id @default(cuid())
+  channelId String
+  userId    String
+  channel   ChatChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([channelId, userId])
+  @@index([userId])
+}
+
+model ChatMessage {
+  id        String     @id @default(cuid())
+  channelId String
+  senderId  String
+  content   String
+  createdAt DateTime   @default(now())
+  channel   ChatChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  sender    User        @relation(fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([channelId, createdAt])
 }

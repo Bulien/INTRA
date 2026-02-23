@@ -19,6 +19,7 @@ type RankingPlayer = {
   id: string;
   playerName: string;
   scores: (number | null)[];
+  elo?: number;
 };
 
 async function fetchRanking(game: string, season: number) {
@@ -33,10 +34,11 @@ async function fetchRanking(game: string, season: number) {
   };
 }
 
-/** Compute stats for ranking preview. For SC: placements 1–4 (games, avg place). For others: wins/losses (games, elo). */
+/** Compute stats for ranking preview. For SC: placements 1–4 (games, avg place). For others: wins/losses (games, elo from API or fallback). */
 function playerStats(
   scores: (number | null)[],
-  gameSlug: string
+  gameSlug: string,
+  apiElo?: number
 ): { games: number; avg: number; elo: number | null } {
   if (gameSlug === "sc") {
     const placementScores = scores.filter((s): s is number => s !== null && s >= 1 && s <= 4);
@@ -50,7 +52,7 @@ function playerStats(
   const wins = scores.filter((s) => s === 1).length;
   const losses = scores.filter((s) => s === 0).length;
   const games = wins + losses;
-  const elo = computeElo(wins, losses);
+  const elo = apiElo ?? computeElo(wins, losses);
   return { games, avg: elo, elo }; // avg used as sort key (higher = better)
 }
 
@@ -160,7 +162,7 @@ export default function HomePage() {
             const players = d?.players ?? [];
             const lowerIsBetter = g.slug === "sc"; // SC: lowest avg placement = best
             const withAvg = players
-              .map((p) => ({ ...p, ...playerStats(p.scores, g.slug) }))
+              .map((p) => ({ ...p, ...playerStats(p.scores, g.slug, p.elo) }))
               .filter((p) => p.playerName?.trim())
               .filter((p) => p.games > 0) // only players with at least one game in this mode
               .sort((a, b) => (lowerIsBetter ? a.avg - b.avg : b.avg - a.avg))

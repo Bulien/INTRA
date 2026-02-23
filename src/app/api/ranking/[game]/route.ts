@@ -2,8 +2,14 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { sanitizeDisplayName } from "@/lib/sanitizeInput";
+import { replayElo, BASE_ELO } from "@/lib/eloReplay";
 
 const VALID_GAMES = ["lol", "ow", "sc", "battlerite"];
+const TEAM_GAMES = ["lol", "ow", "battlerite"];
+
+function normalizeName(s: string): string {
+  return (s ?? "").trim().toLowerCase();
+}
 
 function checkPrisma() {
   const client = prisma as unknown as { rankingPlayer?: unknown };
@@ -51,12 +57,41 @@ export async function GET(
     ? (JSON.parse(seasonMeta.validatedPlayerIds) as string[])
     : [];
 
+  let elos: Record<string, number> = {};
+  if (TEAM_GAMES.includes(game)) {
+    const teamGames = await prisma.teamBuilderGame.findMany({
+      where: { gameType: game, season, status: "result_submitted" },
+      orderBy: { createdAt: "asc" },
+      select: { id: true, teamA: true, teamB: true, winner: true, createdAt: true },
+    });
+    const replayGames = teamGames.map((g) => {
+      const teamA = (JSON.parse(g.teamA) as { name?: string }[]).map((p) => (p.name ?? "").trim()).filter(Boolean);
+      const teamB = (JSON.parse(g.teamB) as { name?: string }[]).map((p) => (p.name ?? "").trim()).filter(Boolean);
+      return {
+        id: g.id,
+        gameType: game,
+        season,
+        teamA,
+        teamB,
+        winner: g.winner as "yin" | "yang" | null,
+        createdAt: g.createdAt,
+      };
+    });
+    const result = replayElo(replayGames);
+    elos = result.elos;
+  }
+
   return NextResponse.json({
-    players: players.map((p) => ({
-      id: p.id,
-      playerName: p.name,
-      scores: JSON.parse(p.scores) as (number | null)[],
-    })),
+    players: players.map((p) => {
+      const scores = JSON.parse(p.scores) as (number | null)[];
+      const elo = TEAM_GAMES.includes(game) ? (elos[normalizeName(p.name)] ?? BASE_ELO) : undefined;
+      return {
+        id: p.id,
+        playerName: p.name,
+        scores,
+        ...(elo !== undefined ? { elo } : {}),
+      };
+    }),
     maxSeason,
     validatedGameIndices,
     validatedPlayerIds,

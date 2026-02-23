@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { computeEloDelta } from "@/lib/elo";
 import { prisma } from "@/lib/prisma";
+import { replayElo } from "@/lib/eloReplay";
 
 const GAME_LABELS: Record<string, string> = {
   lol: "League of Legends",
@@ -159,20 +159,40 @@ export async function GET(
     });
   }
 
-  // Attach Elo delta for non-SC games (result is desc by createdAt; "before" = older = higher index)
-  for (let i = 0; i < result.length; i++) {
-    const entry = result[i];
-    if (entry.gameType === "sc" || entry.userWon == null) continue;
-    let winsBefore = 0;
-    let lossesBefore = 0;
-    for (let j = i + 1; j < result.length; j++) {
-      const o = result[j];
-      if (o.gameType !== entry.gameType) continue;
-      if (o.userWon === true) winsBefore++;
-      if (o.userWon === false) lossesBefore++;
-    }
-    entry.eloDelta = computeEloDelta(winsBefore, lossesBefore, entry.userWon);
+  // Attach Elo delta for non-SC games from match-based replay
+  const teamGameKeys = [...new Set(result.filter((e) => e.gameType !== "sc").map((e) => `${e.gameType}:${e.season}`))];
+  const deltasByKey = new Map<string, Map<string, Record<string, number>>>();
+  for (const key of teamGameKeys) {
+    const [gameType, seasonStr] = key.split(":");
+    const season = parseInt(seasonStr, 10) || 1;
+    const teamGames = await prisma.teamBuilderGame.findMany({
+      where: { gameType, season, status: "result_submitted" },
+      orderBy: { createdAt: "asc" },
+      select: { id: true, teamA: true, teamB: true, winner: true, createdAt: true },
+    });
+    const replayGames = teamGames.map((g) => {
+      const teamA = (JSON.parse(g.teamA) as { name?: string }[]).map((p) => (p.name ?? "").trim()).filter(Boolean);
+      const teamB = (JSON.parse(g.teamB) as { name?: string }[]).map((p) => (p.name ?? "").trim()).filter(Boolean);
+      return {
+        id: g.id,
+        gameType,
+        season,
+        teamA,
+        teamB,
+        winner: g.winner as "yin" | "yang" | null,
+        createdAt: g.createdAt,
+      };
+    });
+    const { gameDeltas } = replayElo(replayGames);
+    deltasByKey.set(key, gameDeltas);
+  }
+  for (const entry of result) {
+    if (entry.gameType === "sc") continue;
+    const key = `${entry.gameType}:${entry.season}`;
+    const deltas = deltasByKey.get(key)?.get(entry.id);
+    if (deltas) entry.eloDelta = deltas[userName] ?? null;
   }
 
-  return NextResponse.json({ games: result });
+  const viewedPlayerName = (user.name ?? user.username ?? "").trim() || username;
+  return NextResponse.json({ games: result, viewedPlayerName });
 }

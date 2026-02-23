@@ -10,6 +10,8 @@ type PlayerRow = {
   id: string;
   playerName: string;
   scores: (number | null)[];
+  /** For team games: match-based Elo from API (replay). Omitted for SC. */
+  elo?: number;
 };
 
 async function fetchLeaderboard(
@@ -27,7 +29,7 @@ async function fetchLeaderboard(
   };
 }
 
-function computeStats(scores: (number | null)[], gameType: string) {
+function computeStats(scores: (number | null)[], gameType: string, apiElo?: number) {
   if (gameType === "sc") {
     const placementScores = scores.filter((s) => s !== null && s >= 1 && s <= 4) as number[];
     const games = placementScores.length;
@@ -41,7 +43,7 @@ function computeStats(scores: (number | null)[], gameType: string) {
   const losses = scores.filter((s) => s === 0).length;
   const games = wins + losses;
   const winrate = games > 0 ? Math.round((wins / games) * 100) : 0;
-  const elo = computeElo(wins, losses);
+  const elo = apiElo ?? computeElo(wins, losses);
   return { wins, losses, games, winrate, avgPlace: 0, elo, isSc: false };
 }
 
@@ -80,7 +82,7 @@ export function LeaderboardClient({
       const latest = latestSeason !== useSeason ? await fetchLeaderboard(gameType, latestSeason) : data;
       const list = (latest.players ?? []).map((p) => ({
         ...p,
-        ...computeStats(p.scores, gameType),
+        ...computeStats(p.scores, gameType, p.elo),
       })) as RowWithStats[];
       list.sort((a, b) =>
         gameType === "sc"
@@ -91,7 +93,7 @@ export function LeaderboardClient({
     } else {
       const list = (data.players ?? []).map((p) => ({
         ...p,
-        ...computeStats(p.scores, gameType),
+        ...computeStats(p.scores, gameType, p.elo),
       })) as RowWithStats[];
       list.sort((a, b) =>
         gameType === "sc"

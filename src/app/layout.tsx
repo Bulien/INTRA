@@ -5,6 +5,8 @@ import { Navbar } from "@/components/Navbar";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { SessionProvider } from "@/components/SessionProvider";
 import { MainWrapper } from "@/components/MainWrapper";
+import { BottomBar } from "@/components/BottomBar";
+import { LeaveQueueOnUnload } from "@/components/LeaveQueueOnUnload";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -43,9 +45,11 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-screen`}
       >
         <SessionProvider>
+          <LeaveQueueOnUnload />
           <ThemeProvider>
             <Navbar />
             <MainWrapper>{children}</MainWrapper>
+            <BottomBar />
           </ThemeProvider>
         </SessionProvider>
       </body>
