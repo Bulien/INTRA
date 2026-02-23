@@ -38,7 +38,10 @@ export async function GET(
     }
   }
 
-  let messages: Awaited<ReturnType<typeof prisma.chatMessage.findMany>>;
+  const includeSender = { sender: { select: { id: true, name: true, username: true } } } as const;
+  let messages: Awaited<
+    ReturnType<typeof prisma.chatMessage.findMany<{ include: typeof includeSender }>>
+  >;
   if (before) {
     const beforeMsg = await prisma.chatMessage.findUnique({
       where: { id: before, channelId },
@@ -51,9 +54,7 @@ export async function GET(
       where: { channelId, createdAt: { lt: beforeMsg.createdAt } },
       take: limit + 1,
       orderBy: { createdAt: "desc" },
-      include: {
-        sender: { select: { id: true, name: true, username: true } },
-      },
+      include: includeSender,
     });
     messages = messages.reverse();
   } else {
@@ -62,9 +63,7 @@ export async function GET(
       where: { channelId },
       take: limit,
       orderBy: { createdAt: "desc" },
-      include: {
-        sender: { select: { id: true, name: true, username: true } },
-      },
+      include: includeSender,
     });
     messages = newest.reverse();
   }

@@ -17,7 +17,7 @@ export async function GET(req: Request) {
   const cursor = searchParams.get("cursor") ?? undefined;
   const q = searchParams.get("q")?.trim().toLowerCase() ?? "";
 
-  const where: { id: { not: string }; OR?: { name: { contains: string; mode: "insensitive" }; username: { contains: string; mode: "insensitive" } }[] } = {
+  const where: { id: { not: string }; OR?: Array<{ name?: { contains: string; mode: "insensitive" }; username?: { contains: string; mode: "insensitive" } }> } = {
     id: { not: session.user.id },
   };
   if (q) {

@@ -1,0 +1,10 @@
+---
+description: Require full TypeScript compile and type check in dev (no lazy/incremental-only)
+alwaysApply: true
+---
+
+# Full compile in dev
+
+- **Do not** rely on lazy or incremental-only type checking in development.
+- Prefer configurations and scripts that run a **full project type check** when starting or running dev (e.g. `tsc --noEmit` before or as part of `next dev`).
+- When adding or changing code, ensure the project is set up so that type errors are caught in dev the same way as in `next build` (full compile, full type check).

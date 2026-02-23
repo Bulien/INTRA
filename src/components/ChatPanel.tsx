@@ -98,7 +98,7 @@ export function ChatPanel({
     const tick = () => {
       fetchMessages(selectedChannelId).then(() => {
         fetch(`/api/chat/channels/${selectedChannelId}/read`, { method: "POST" })
-          .then((r) => r.ok && (fetchChannels(), onReadDm?.(selectedChannelId)))
+          .then((r) => { if (r.ok) { fetchChannels(); onReadDm?.(selectedChannelId); } })
           .catch(() => {});
       });
     };
@@ -118,7 +118,7 @@ export function ChatPanel({
     if (isDmOrGroup) {
       lastReadChannelRef.current = selectedChannelId;
       fetch(`/api/chat/channels/${selectedChannelId}/read`, { method: "POST" })
-        .then((r) => r.ok && fetchChannels())
+        .then((r) => { if (r.ok) fetchChannels(); })
         .catch(() => {});
       onReadDm?.(selectedChannelId);
     }
@@ -390,7 +390,7 @@ export function ChatPanel({
                 onClick={() => { setSelectedChannelId(c.id); setShowUserList(false); setShowGroupFlow(false); }}
                 className={`w-full text-left px-2 py-1.5 rounded text-sm truncate ${selectedChannelId === c.id ? "bg-cyan-500/20 text-cyan-200" : "text-neutral-300 hover:bg-white/5"}`}
               >
-                {c.label}
+                {c.type === "game" ? c.label : ""}
               </button>
             ))}
             {(channelsData?.dmChannels ?? []).map((c) => (
@@ -403,7 +403,7 @@ export function ChatPanel({
                 {hasUnread(c) && (
                   <span className="w-1.5 h-1.5 rounded-full bg-amber-400 flex-shrink-0 shadow-[0_0_6px_rgba(251,191,36,0.8)]" aria-hidden />
                 )}
-                <span className="min-w-0 truncate">DM: {displayName(c.otherUser)}</span>
+                <span className="min-w-0 truncate">DM: {c.type === "dm" ? displayName(c.otherUser) : ""}</span>
               </button>
             ))}
             {(channelsData?.groupChannels ?? []).map((c) => (
@@ -416,7 +416,7 @@ export function ChatPanel({
                 {hasUnread(c) && (
                   <span className="w-1.5 h-1.5 rounded-full bg-amber-400 flex-shrink-0 shadow-[0_0_6px_rgba(251,191,36,0.8)]" aria-hidden />
                 )}
-                <span className="min-w-0 truncate">{c.name}</span>
+                <span className="min-w-0 truncate">{c.type === "group" ? c.name : ""}</span>
               </button>
             ))}
           </div>
