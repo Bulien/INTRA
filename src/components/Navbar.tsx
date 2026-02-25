@@ -72,6 +72,8 @@ export function Navbar() {
   const [queuePinned, setQueuePinned] = useState(false);
   const [matchedGameFromQueue, setMatchedGameFromQueue] = useState<MatchedGame | null>(null);
   const [ongoingQueueMatchId, setOngoingQueueMatchId] = useState<string | null>(null);
+  const previousPendingGameIdsRef = useRef<Set<string>>(new Set());
+  const navInitializedRef = useRef(false);
   const onlineMenuOpen = onlineHovering || onlinePinned;
   const queueMenuOpen = queueHovering || queuePinned;
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -94,31 +96,35 @@ export function Navbar() {
     }
   };
 
+  const fetchNav = useCallback(async () => {
+    const res = await fetch("/api/nav", { cache: "no-store" });
+    if (!res.ok) return;
+    const data = await res.json();
+    const pendingGameIds = (data.pendingGameIds ?? []) as string[];
+    setActiveGamesCount(data.pendingGamesCount ?? 0);
+    setOngoingQueueMatchId(data.ongoingQueueMatchId ?? null);
+    setOnlineUsers(data.online ?? []);
+
+    const prevIds = previousPendingGameIdsRef.current;
+    const hasNewGame = pendingGameIds.some((id) => !prevIds.has(id));
+    if (navInitializedRef.current && hasNewGame && pendingGameIds.length > 0) {
+      router.push("/team-builder");
+    }
+    navInitializedRef.current = true;
+    previousPendingGameIdsRef.current = new Set(pendingGameIds);
+  }, [router]);
+
   useEffect(() => {
     if (status !== "authenticated" || !session?.user) {
       setActiveGamesCount(0);
       setOngoingQueueMatchId(null);
+      setOnlineUsers([]);
       return;
     }
-    const fetchPending = () => {
-      fetch("/api/team-builder/games?status=pending", { cache: "no-store" })
-        .then((res) => (res.ok ? res.json() : { games: [] }))
-        .then((data) => {
-          const games = data.games ?? [];
-          const teamBuilderGames = games.filter((g: { source?: string }) => g.source !== "ranked_queue");
-          setActiveGamesCount(teamBuilderGames.length);
-          const queueGame = games.find((g: { source?: string }) => g.source === "ranked_queue");
-          setOngoingQueueMatchId(queueGame?.id ?? null);
-        })
-        .catch(() => {
-          setActiveGamesCount(0);
-          setOngoingQueueMatchId(null);
-        });
-    };
-    fetchPending();
-    const interval = setInterval(fetchPending, 15000);
+    fetchNav();
+    const interval = setInterval(fetchNav, 5000);
     return () => clearInterval(interval);
-  }, [status, session?.user]);
+  }, [status, session?.user, fetchNav]);
 
   const fetchQueue = useCallback(async () => {
     const res = await fetch("/api/queue", { cache: "no-store" });
@@ -141,7 +147,7 @@ export function Navbar() {
       return;
     }
     fetchQueue();
-    const interval = setInterval(fetchQueue, 4000);
+    const interval = setInterval(fetchQueue, 5000);
     return () => clearInterval(interval);
   }, [status, session?.user, fetchQueue]);
 
@@ -157,22 +163,7 @@ export function Navbar() {
     return () => clearInterval(interval);
   }, [queueData?.myEntry?.joinedAt]);
 
-  const fetchOnline = useCallback(async () => {
-    const res = await fetch("/api/online", { cache: "no-store" });
-    if (!res.ok) return;
-    const data = await res.json();
-    setOnlineUsers(data.users ?? []);
-  }, []);
-
-  useEffect(() => {
-    if (status !== "authenticated" || !session?.user) {
-      setOnlineUsers([]);
-      return;
-    }
-    fetchOnline();
-    const interval = setInterval(fetchOnline, 4000);
-    return () => clearInterval(interval);
-  }, [status, session?.user, fetchOnline]);
+  // Online users are loaded via fetchNav above (combined with pending games).
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -370,13 +361,23 @@ export function Navbar() {
           )}
         </div>
       )}
-      {session && queueData && (
+      {session && (
         <div
-          className="fixed top-0 right-0 z-[60] flex items-center pr-4 border-b border-cyan-500/20 bg-black/80 backdrop-blur-sm pl-6 h-14"
+          className="fixed top-0 right-0 z-[60] flex items-center gap-3 pr-4 border-b border-cyan-500/20 bg-black/80 backdrop-blur-sm pl-4 h-14"
           ref={queueMenuRef}
           onMouseEnter={() => { clearQueueCloseTimeout(); setQueueHovering(true); }}
           onMouseLeave={() => { clearQueueCloseTimeout(); queueCloseTimeoutRef.current = setTimeout(() => setQueueHovering(false), 200); }}
         >
+          <button
+            type="button"
+            onClick={() => setPlayModalOpen(true)}
+            className="flex items-center gap-3 px-10 py-1 rounded-xl text-xl font-bold text-orange-200 bg-orange-950/90 hover:bg-orange-900 border-2 border-orange-500/70 shadow-[0_0_20px_rgba(234,88,12,0.45)] hover:shadow-[0_0_28px_rgba(234,88,12,0.55)] transition-all"
+            aria-label="Join queue to play"
+          >
+            <SportsEsportsIcon sx={{ fontSize: 36 }} />
+            Play
+          </button>
+          {queueData && (
           <button
             type="button"
             onClick={() => setQueuePinned((o) => !o)}
@@ -410,7 +411,8 @@ export function Navbar() {
               </>
             )}
           </button>
-          {queueMenuOpen && (
+          )}
+          {queueData && queueMenuOpen && (
             <div
               className="absolute top-full right-4 mt-1 w-72 max-h-80 overflow-auto rounded-lg border border-cyan-500/30 bg-black/95 shadow-xl z-[100]"
               onMouseEnter={() => { clearQueueCloseTimeout(); setQueueHovering(true); }}
@@ -477,20 +479,9 @@ export function Navbar() {
               href="/"
               className="text-lg font-semibold text-white hover:text-cyan-300 transition-colors flex items-center gap-1.5"
             >
-              <img src="/yin-yang.png" alt="" aria-hidden className="h-6 w-6 block bg-transparent mix-blend-multiply" />
+              <img src="/yinyang_gen2.png" alt="" aria-hidden className="h-6 w-6 block" />
               INTRA
             </Link>
-            {session && (
-              <button
-                type="button"
-                onClick={() => setPlayModalOpen(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium text-orange-200 bg-orange-950/80 hover:bg-orange-900/90 border border-orange-500/60 shadow-[0_0_12px_rgba(234,88,12,0.35)] hover:shadow-[0_0_16px_rgba(234,88,12,0.45)] transition-all"
-                aria-label="Join queue to play"
-              >
-                <SportsEsportsIcon sx={{ fontSize: 18 }} />
-                Play
-              </button>
-            )}
           </div>
 
           <div className="flex items-center gap-1">
@@ -773,6 +764,7 @@ export function Navbar() {
           </div>,
           document.body
         )}
+
     </nav>
   );
 }

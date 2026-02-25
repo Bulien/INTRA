@@ -121,16 +121,19 @@ export function TeamColumn({
 
 /**
  * Single player row for TeamColumn. Use with TeamColumn's children.
+ * highlight: when true, shows yellow "you" border on the whole row (aligned with teammates).
  */
 export function TeamPlayerRow({
   name,
   rating,
   color,
+  highlight,
   children,
 }: {
   name: string;
   rating: number | string;
   color: string;
+  highlight?: boolean;
   children?: React.ReactNode;
 }) {
   return (
@@ -144,11 +147,12 @@ export function TeamPlayerRow({
         px: 2,
         borderBottom: "1px solid rgba(255,255,255,0.04)",
         "&:last-of-type": { borderBottom: "none" },
+        ...(highlight ? { outline: "1px solid rgba(251, 191, 36, 0.6)", outlineOffset: -1, borderRadius: 1.5, boxShadow: "inset 0 0 12px rgba(251, 191, 36, 0.15)" } : {}),
       }}
     >
       <Box sx={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", pr: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 0.5 }}>
         {children ?? (
-          <Typography variant="body2" sx={{ color: "rgba(255,255,255,0.88)" }}>
+          <Typography variant="body2" sx={{ color: highlight ? "#fcd34d" : "rgba(255,255,255,0.88)", fontWeight: highlight ? 600 : 400 }}>
             {name || "—"}
           </Typography>
         )}

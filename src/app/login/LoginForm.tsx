@@ -2,11 +2,13 @@
 
 import { signIn } from "next-auth/react";
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Card, CardContent, Button, Typography, TextField } from "@mui/material";
 import { sanitizeDisplayName, sanitizePassword } from "@/lib/sanitizeInput";
 
 export function LoginForm() {
+  const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [login, setLogin] = useState("");
   const [password, setPassword] = useState("");
@@ -25,9 +27,24 @@ export function LoginForm() {
         username: login.trim().toLowerCase(),
         password,
         callbackUrl: "/",
-        redirect: true,
-      })) as { error?: string } | undefined;
-      if (res?.error) setError("Invalid pseudo or password");
+        redirect: false,
+      })) as { ok?: boolean; error?: string; url?: string } | undefined;
+      if (res?.error) {
+        setError("Invalid pseudo or password");
+        return;
+      }
+      if (!res?.ok) return;
+      const navRes = await fetch("/api/nav", { cache: "no-store" });
+      const navData = navRes.ok ? await navRes.json().catch(() => ({})) : {};
+      const queueMatchId = navData.ongoingQueueMatchId ?? null;
+      const pendingCount = navData.pendingGamesCount ?? 0;
+      if (queueMatchId) {
+        router.replace(`/queue-match/${queueMatchId}`);
+      } else if (pendingCount > 0) {
+        router.replace("/team-builder");
+      } else {
+        router.replace(res?.url ?? "/");
+      }
     } catch {
       setError("Something went wrong");
     } finally {

@@ -1,10 +1,15 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import dynamic from "next/dynamic";
 import { useSession } from "next-auth/react";
 import ChatIcon from "@mui/icons-material/Chat";
-import { ChatPanel } from "@/components/ChatPanel";
 import { useOpenDm } from "@/contexts/OpenDmContext";
+
+const ChatPanel = dynamic(
+  () => import("@/components/ChatPanel").then((mod) => ({ default: mod.ChatPanel })),
+  { ssr: false, loading: () => null }
+);
 
 export function BottomBar() {
   const { data: session, status } = useSession();
@@ -40,7 +45,7 @@ export function BottomBar() {
     setUnreadDmCount(dmCount + groupCount);
   }, [status, session?.user?.id, isUnread]);
 
-  const UNREAD_POLL_MS = 3_000;
+  const UNREAD_POLL_MS = 5_000;
 
   useEffect(() => {
     if (status !== "authenticated" || !session?.user) return;
@@ -92,13 +97,15 @@ export function BottomBar() {
           </button>
         </div>
       </footer>
-      <ChatPanel
-        open={chatOpen}
-        onClose={() => setChatOpen(false)}
-        onReadDm={onReadDm}
-        openDmWithUserId={openDmWithUserId}
-        onOpenDmConsumed={() => setOpenDmWithUserId(null)}
-      />
+      {chatOpen && (
+        <ChatPanel
+          open={chatOpen}
+          onClose={() => setChatOpen(false)}
+          onReadDm={onReadDm}
+          openDmWithUserId={openDmWithUserId}
+          onOpenDmConsumed={() => setOpenDmWithUserId(null)}
+        />
+      )}
     </>
   );
 }

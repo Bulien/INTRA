@@ -10,10 +10,12 @@
  * Example:
  *   npx dotenv -e .env.local -- node scripts/seed-queue.mjs lol
  *
- * Default gameType: lol (must be lol or ow for matchmaking to run).
+ * Default gameType: lol. Matchmaking: lol/ow = 10 players (5v5), battlerite = 6 players (3v3).
  */
 
 import { PrismaClient } from "@prisma/client";
+
+const REQUIRED_BY_GAME = { lol: 10, ow: 10, battlerite: 6 };
 
 const DATABASE_URL = process.env.DATABASE_URL ?? "";
 const NODE_ENV = process.env.NODE_ENV ?? "";
@@ -34,38 +36,40 @@ if (looksLikeProduction()) {
 }
 
 const gameType = (process.argv[2]?.trim()?.toLowerCase() || "lol");
-if (!["lol", "ow"].includes(gameType)) {
-  console.error("gameType must be lol or ow (matchmaking only runs for these).");
+const required = REQUIRED_BY_GAME[gameType];
+if (!required) {
+  console.error("gameType must be lol, ow, or battlerite (matchmaking only runs for these).");
   process.exit(1);
 }
 
 const prisma = new PrismaClient();
 
 const users = await prisma.user.findMany({
-  take: 10,
+  take: Math.max(required, 10),
   select: { id: true, username: true, name: true },
   orderBy: { createdAt: "asc" },
 });
 
-if (users.length < 10) {
+if (users.length < required) {
   console.error(
-    `Need at least 10 users in the DB. Found ${users.length}. Create more accounts via the app register page.`
+    `Need at least ${required} users in the DB for "${gameType}". Found ${users.length}. Create more accounts via the app register page.`
   );
   await prisma.$disconnect();
   process.exit(1);
 }
+const toSeed = users.slice(0, required);
 
 await prisma.queueEntry.deleteMany({
-  where: { userId: { in: users.map((u) => u.id) } },
+  where: { userId: { in: toSeed.map((u) => u.id) } },
 });
 
 await prisma.queueEntry.createMany({
-  data: users.map((u) => ({ userId: u.id, gameType })),
+  data: toSeed.map((u) => ({ userId: u.id, gameType })),
 });
 
 console.log(
-  `Seeded queue for "${gameType}" with ${users.length} users:`,
-  users.map((u) => u.username || u.name || u.id).join(", ")
+  `Seeded queue for "${gameType}" with ${toSeed.length} users:`,
+  toSeed.map((u) => u.username || u.name || u.id).join(", ")
 );
 console.log(
   "\nNext: log in as one of these users, open the app (any page). Within ~4s the queue will pop and you'll see the match modal."

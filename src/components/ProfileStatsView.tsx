@@ -185,7 +185,7 @@ export function ProfileStatsView({ stats, isOwnProfile = true }: ProfileStatsVie
                   <>
                     {g.eloTeamBuilder != null && (
                       <>
-                        <Box component="dt">Team Builder</Box>
+                        <Box component="dt">Custom leaderboard</Box>
                         <Box component="dd" sx={{ color: "#a5f3fc" }}>
                           {g.eloTeamBuilder}
                           {g.rankTeamBuilder != null && (
@@ -195,7 +195,7 @@ export function ProfileStatsView({ stats, isOwnProfile = true }: ProfileStatsVie
                       </>
                     )}
                     <>
-                      <Box component="dt">Ranked Queue</Box>
+                      <Box component="dt">Ranked leaderboard</Box>
                       <Box component="dd" sx={{ color: "#a5f3fc" }}>
                         {g.eloQueue != null ? (
                           <>

@@ -4,7 +4,13 @@ import { prisma } from "@/lib/prisma";
 import { getElosForPlayers, balanceTeams, type PlayerWithElo } from "@/lib/queueMatchmaking";
 
 const GAME_TYPES = ["lol", "ow", "sc", "battlerite"] as const;
-const QUEUE_MATCH_GAMES = ["lol", "ow"] as const;
+/** Games that support queue matchmaking: lol/ow = 10 players (5v5), battlerite = 6 players (3v3). */
+const QUEUE_MATCH_CONFIG: Record<string, number> = {
+  lol: 10,
+  ow: 10,
+  battlerite: 6,
+};
+const QUEUE_MATCH_GAMES = ["lol", "ow", "battlerite"] as const;
 const GAME_LABELS: Record<string, string> = {
   lol: "League of Legends",
   ow: "Overwatch",
@@ -20,17 +26,20 @@ export type QueuedPlayer = {
   joinedAt: string;
 };
 
-/** If 10 in queue for lol or ow, create a balanced match and remove them from queue. Returns { gameId, matchedUserIds } or null. */
+/** If enough players in queue (10 for lol/ow, 6 for battlerite), create a balanced match and remove them from queue. Returns { gameId, matchedUserIds } or null. */
 async function tryCreateQueueMatch(
-  gameType: "lol" | "ow"
+  gameType: "lol" | "ow" | "battlerite"
 ): Promise<{ gameId: string; matchedUserIds: string[] } | null> {
+  const required = QUEUE_MATCH_CONFIG[gameType] ?? 10;
+  const teamSize = required / 2;
+
   const entries = await prisma.queueEntry.findMany({
     where: { gameType },
     orderBy: { joinedAt: "asc" },
-    take: 10,
+    take: required,
     include: { user: { select: { id: true, name: true, username: true } } },
   });
-  if (entries.length < 10) return null;
+  if (entries.length < required) return null;
 
   const userIds = entries.map((e) => (e.user as { id: string }).id);
   const displayNames = entries.map((e) => {
@@ -48,7 +57,7 @@ async function tryCreateQueueMatch(
     elo: Math.round(elos[(displayNames[i] ?? "").trim().toLowerCase()] ?? 1000),
   }));
 
-  const { teamA, teamB } = balanceTeams(playersWithElo);
+  const { teamA, teamB } = balanceTeams(playersWithElo, teamSize);
 
   const teamAPayload = teamA.map((p) => ({ id: p.userId, name: p.displayName, rating: p.elo }));
   const teamBPayload = teamB.map((p) => ({ id: p.userId, name: p.displayName, rating: p.elo }));
@@ -71,7 +80,7 @@ async function tryCreateQueueMatch(
   return { gameId: game.id, matchedUserIds: userIds };
 }
 
-/** GET: current user's queue entry (if any) + all queued players grouped by game. When 10 in queue for lol/ow, creates a match and returns recentlyMatchedGameId for matched users. */
+/** GET: current user's queue entry (if any) + all queued players grouped by game. When enough in queue (10 for lol/ow, 6 for battlerite), creates a match and returns recentlyMatchedGameId for matched users. */
 export async function GET() {
   const session = await auth();
   if (!session?.user?.id) {
@@ -81,8 +90,9 @@ export async function GET() {
   let recentlyMatchedGameId: string | null = null;
 
   for (const gameType of QUEUE_MATCH_GAMES) {
+    const required = QUEUE_MATCH_CONFIG[gameType] ?? 10;
     const count = await prisma.queueEntry.count({ where: { gameType } });
-    if (count >= 10) {
+    if (count >= required) {
       try {
         const result = await tryCreateQueueMatch(gameType);
         if (result) {

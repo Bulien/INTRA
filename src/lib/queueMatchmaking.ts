@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { replayElo, BASE_ELO } from "@/lib/eloReplay";
 
-const TEAM_GAMES = ["lol", "ow"] as const;
+const TEAM_GAMES = ["lol", "ow", "battlerite"] as const;
 
 function normalizeName(s: string): string {
   return (s ?? "").trim().toLowerCase();
@@ -47,20 +47,19 @@ export async function getElosForPlayers(
 }
 
 /**
- * Balance 10 players into two teams of 5 so that total ELO is as equal as possible.
- * Uses optimal split (minimizes |sumA - sumB|) over all 5-vs-5 splits.
+ * Balance players into two teams of equal size so that total ELO is as equal as possible.
+ * Uses optimal split (minimizes |sumA - sumB|). Supports 10 players (5v5) or 6 players (3v3).
  * Returns { teamA: PlayerWithElo[], teamB: PlayerWithElo[] }.
  */
-export function balanceTeams(players: PlayerWithElo[]): {
-  teamA: PlayerWithElo[];
-  teamB: PlayerWithElo[];
-} {
-  if (players.length !== 10) {
+export function balanceTeams(
+  players: PlayerWithElo[],
+  teamSize?: number
+): { teamA: PlayerWithElo[]; teamB: PlayerWithElo[] } {
+  const size =
+    teamSize ?? (players.length === 10 ? 5 : players.length === 6 ? 3 : Math.ceil(players.length / 2));
+  if (players.length !== size * 2) {
     const mid = Math.ceil(players.length / 2);
-    return {
-      teamA: players.slice(0, mid),
-      teamB: players.slice(mid),
-    };
+    return { teamA: players.slice(0, mid), teamB: players.slice(mid) };
   }
   const total = players.reduce((s, p) => s + p.elo, 0);
   const targetHalf = total / 2;
@@ -82,7 +81,7 @@ export function balanceTeams(players: PlayerWithElo[]): {
       teamA.pop();
     }
   }
-  choose(5, 0, [], 0);
+  choose(size, 0, [], 0);
 
   const setA = new Set(bestTeamA);
   const teamB = players.filter((p) => !setA.has(p));

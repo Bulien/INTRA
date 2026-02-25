@@ -28,6 +28,18 @@ export async function GET(
     return NextResponse.json({ error: "You are not in this game" }, { status: 403 });
   }
 
+  let resultVotes: { votesYin: number; votesYang: number } | undefined;
+  if (game.status === "pending") {
+    const votes = await prisma.teamBuilderResultVote.findMany({
+      where: { gameId: game.id },
+      select: { winner: true },
+    });
+    resultVotes = {
+      votesYin: votes.filter((v) => v.winner === "yin").length,
+      votesYang: votes.filter((v) => v.winner === "yang").length,
+    };
+  }
+
   return NextResponse.json({
     id: game.id,
     gameType: game.gameType,
@@ -38,5 +50,6 @@ export async function GET(
     winner: game.winner,
     createdAt: game.createdAt,
     source: game.source ?? "team_builder",
+    ...(resultVotes && { resultVotes }),
   });
 }

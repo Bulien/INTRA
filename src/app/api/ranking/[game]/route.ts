@@ -121,12 +121,15 @@ export async function GET(
         elo,
       };
     });
-    return NextResponse.json({
-      players,
-      maxSeason,
-      validatedGameIndices: [],
-      validatedPlayerIds: [],
-    });
+    return NextResponse.json(
+      {
+        players,
+        maxSeason,
+        validatedGameIndices: [],
+        validatedPlayerIds: [],
+      },
+      { headers: { "Cache-Control": "public, s-maxage=20, stale-while-revalidate=40" } }
+    );
   }
 
   const [players, seasonMeta] = await Promise.all([
@@ -165,21 +168,24 @@ export async function GET(
     elos = result.elos;
   }
 
-  return NextResponse.json({
-    players: players.map((p) => {
-      const scores = JSON.parse(p.scores) as (number | null)[];
-      const elo = TEAM_GAMES.includes(game) ? (elos[normalizeName(p.name)] ?? BASE_ELO) : undefined;
-      return {
-        id: p.id,
-        playerName: p.name,
-        scores,
-        ...(elo !== undefined ? { elo } : {}),
-      };
-    }),
-    maxSeason,
-    validatedGameIndices,
-    validatedPlayerIds,
-  });
+  return NextResponse.json(
+    {
+      players: players.map((p) => {
+        const scores = JSON.parse(p.scores) as (number | null)[];
+        const elo = TEAM_GAMES.includes(game) ? (elos[normalizeName(p.name)] ?? BASE_ELO) : undefined;
+        return {
+          id: p.id,
+          playerName: p.name,
+          scores,
+          ...(elo !== undefined ? { elo } : {}),
+        };
+      }),
+      maxSeason,
+      validatedGameIndices,
+      validatedPlayerIds,
+    },
+    { headers: { "Cache-Control": "public, s-maxage=20, stale-while-revalidate=40" } }
+  );
 }
 
 export async function PUT(

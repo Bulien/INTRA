@@ -10,10 +10,12 @@
  *   node scripts/pop-queue.mjs ow --confirm
  *
  * On production-like DATABASE_URL, --confirm is required.
- * gameType: lol (default) or ow.
+ * gameType: lol (default), ow, or battlerite. lol/ow = 10 players, battlerite = 6.
  */
 
 import { PrismaClient } from "@prisma/client";
+
+const REQUIRED_BY_GAME = { lol: 10, ow: 10, battlerite: 6 };
 
 const DATABASE_URL = process.env.DATABASE_URL ?? "";
 const NODE_ENV = process.env.NODE_ENV ?? "";
@@ -30,8 +32,9 @@ const argv = process.argv.slice(2);
 const hasConfirm = argv.includes("--confirm");
 const gameType = (argv.filter((a) => a !== "--confirm")[0]?.trim()?.toLowerCase() || "lol");
 
-if (!["lol", "ow"].includes(gameType)) {
-  console.error("gameType must be lol or ow.");
+const required = REQUIRED_BY_GAME[gameType];
+if (!required) {
+  console.error("gameType must be lol, ow, or battlerite.");
   process.exit(1);
 }
 
@@ -47,28 +50,29 @@ if (looksLikeProduction() && !hasConfirm) {
 const prisma = new PrismaClient();
 
 const users = await prisma.user.findMany({
-  take: 10,
+  take: Math.max(required, 10),
   select: { id: true, username: true, name: true },
   orderBy: { createdAt: "asc" },
 });
 
-if (users.length < 10) {
-  console.error(`Need at least 10 users in the DB. Found ${users.length}.`);
+if (users.length < required) {
+  console.error(`Need at least ${required} users in the DB for "${gameType}". Found ${users.length}.`);
   await prisma.$disconnect();
   process.exit(1);
 }
+const toSeed = users.slice(0, required);
 
 await prisma.queueEntry.deleteMany({
-  where: { userId: { in: users.map((u) => u.id) } },
+  where: { userId: { in: toSeed.map((u) => u.id) } },
 });
 
 await prisma.queueEntry.createMany({
-  data: users.map((u) => ({ userId: u.id, gameType })),
+  data: toSeed.map((u) => ({ userId: u.id, gameType })),
 });
 
 console.log(
-  `Queue seeded for "${gameType}" with ${users.length} users:`,
-  users.map((u) => u.username || u.name || u.id).join(", ")
+  `Queue seeded for "${gameType}" with ${toSeed.length} users:`,
+  toSeed.map((u) => u.username || u.name || u.id).join(", ")
 );
 console.log("Next GET /api/queue (e.g. when a user opens the app) will create the match.");
 await prisma.$disconnect();

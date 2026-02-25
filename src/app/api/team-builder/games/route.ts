@@ -50,6 +50,22 @@ export async function GET(req: Request) {
     return names.includes(userName);
   });
 
+  const pendingIds = filtered.filter((g) => g.status === "pending").map((g) => g.id);
+  let votesByGameId: Record<string, { votesYin: number; votesYang: number }> = {};
+  if (pendingIds.length > 0) {
+    const votes = await prisma.teamBuilderResultVote.findMany({
+      where: { gameId: { in: pendingIds } },
+      select: { gameId: true, winner: true },
+    });
+    for (const id of pendingIds) {
+      const gameVotes = votes.filter((v) => v.gameId === id);
+      votesByGameId[id] = {
+        votesYin: gameVotes.filter((v) => v.winner === "yin").length,
+        votesYang: gameVotes.filter((v) => v.winner === "yang").length,
+      };
+    }
+  }
+
   return NextResponse.json({
     games: filtered.map((g) => ({
       id: g.id,
@@ -66,6 +82,7 @@ export async function GET(req: Request) {
         return by?.name ?? by?.username ?? "Someone";
       })(),
       source: g.source ?? "team_builder",
+      ...(g.status === "pending" && votesByGameId[g.id] && { resultVotes: votesByGameId[g.id] }),
     })),
   });
 }

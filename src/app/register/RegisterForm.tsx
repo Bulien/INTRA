@@ -58,7 +58,17 @@ export function RegisterForm() {
         setLoading(false);
         return;
       }
-      router.push("/");
+      const navRes = await fetch("/api/nav", { cache: "no-store" });
+      const navData = navRes.ok ? await navRes.json().catch(() => ({})) : {};
+      const queueMatchId = navData.ongoingQueueMatchId ?? null;
+      const pendingCount = navData.pendingGamesCount ?? 0;
+      if (queueMatchId) {
+        router.replace(`/queue-match/${queueMatchId}`);
+      } else if (pendingCount > 0) {
+        router.replace("/team-builder");
+      } else {
+        router.replace("/");
+      }
       router.refresh();
     } catch {
       setError("Something went wrong");

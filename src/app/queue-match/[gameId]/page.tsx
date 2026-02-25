@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
@@ -25,6 +25,7 @@ type GameData = {
   winner: string | null;
   createdAt: string;
   source: string;
+  resultVotes?: { votesYin: number; votesYang: number };
 };
 
 function TeamCard({
@@ -87,7 +88,7 @@ function TeamCard({
               py: 1,
               px: 2,
               borderBottom: i < players.length - 1 ? "1px solid rgba(255,255,255,0.04)" : "none",
-              ...(isYou ? { border: "1px solid rgba(251, 191, 36, 0.6)", borderRadius: 1.5, boxShadow: "inset 0 0 12px rgba(251, 191, 36, 0.15)", mx: 0.5, mt: 0.5 } : {}),
+              ...(isYou ? { outline: "1px solid rgba(251, 191, 36, 0.6)", outlineOffset: -1, borderRadius: 1.5, boxShadow: "inset 0 0 12px rgba(251, 191, 36, 0.15)" } : {}),
             }}
           >
             <Typography
@@ -132,32 +133,56 @@ export default function QueueMatchPage() {
       return;
     }
     fetch(`/api/team-builder/games/${gameId}`, { cache: "no-store" })
-      .then((res) => {
-        if (!res.ok) return res.json().then((d) => { throw new Error(d.error ?? "Failed to load"); });
-        return res.json();
+      .then(async (res) => {
+        const text = await res.text();
+        const data = text ? (() => { try { return JSON.parse(text); } catch { return {}; } })() : {};
+        if (!res.ok) throw new Error((data as { error?: string }).error ?? "Failed to load");
+        return data;
       })
       .then(setGame)
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
   }, [gameId]);
 
+  const [voteRecordedMessage, setVoteRecordedMessage] = useState<string | null>(null);
+  const fetchGame = useCallback(() => {
+    if (!gameId) return;
+    fetch(`/api/team-builder/games/${gameId}`, { cache: "no-store" })
+      .then(async (r) => {
+        const text = await r.text();
+        const data = text ? (() => { try { return JSON.parse(text); } catch { return null; } })() : null;
+        return { ok: r.ok, data };
+      })
+      .then(({ ok, data }) => {
+        if (ok && data != null && typeof data === "object" && "id" in data) setGame(data as GameData);
+      })
+      .catch(() => {});
+  }, [gameId]);
+
   const handleSubmitResult = async (winner: "yin" | "yang") => {
     if (!gameId || game?.status !== "pending") return;
     setSubmitting(true);
     setSubmitError(null);
+    setVoteRecordedMessage(null);
     try {
       const res = await fetch(`/api/team-builder/games/${gameId}/result`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ winner }),
       });
-      const data = await res.json().catch(() => ({}));
+      const text = await res.text();
+      const data = text ? (() => { try { return JSON.parse(text); } catch { return {}; } })() : {};
       if (!res.ok) {
         setSubmitError(data.error ?? "Failed to submit result");
         return;
       }
-      setSubmitted(true);
-      setGame((prev) => (prev ? { ...prev, status: "result_submitted", winner } : null));
+      if (data.winner) {
+        setSubmitted(true);
+        setGame((prev) => (prev ? { ...prev, status: "result_submitted", winner: data.winner } : null));
+      } else if (data.voteRecorded) {
+        setVoteRecordedMessage(data.message ?? "Your vote was recorded. One more matching vote is needed to confirm the result.");
+        fetchGame();
+      }
     } catch {
       setSubmitError("Failed to submit result");
     } finally {
@@ -187,6 +212,11 @@ export default function QueueMatchPage() {
   }
 
   const currentUserName = (session?.user?.name ?? session?.user?.email ?? "").trim();
+  const un = currentUserName.toLowerCase();
+  const inYin = game.teamA.some((p) => (p.name ?? "").trim().toLowerCase() === un);
+  const inYang = game.teamB.some((p) => (p.name ?? "").trim().toLowerCase() === un);
+  const canSubmitYin = !inYin; // only losing team can submit
+  const canSubmitYang = !inYang;
   const isPending = game.status === "pending";
   const gameLabel = GAME_LABELS[game.gameType] ?? game.gameType;
   const eloA = game.teamA.reduce((s, p) => s + (p.rating ?? 0), 0);
@@ -206,7 +236,7 @@ export default function QueueMatchPage() {
         className="inline-flex items-center gap-1 text-sm text-neutral-400 hover:text-cyan-300 font-medium mb-6 no-underline"
       >
         <ArrowBackIcon sx={{ fontSize: 18 }} />
-        Ranked Queue
+        Ranked leaderboard
       </Link>
 
       <Box
@@ -305,6 +335,27 @@ export default function QueueMatchPage() {
             </Box>
           ) : (
             <>
+              {voteRecordedMessage && (
+                <Box
+                  sx={{
+                    mb: 2,
+                    py: 1,
+                    px: 2,
+                    borderRadius: 1,
+                    bgcolor: "rgba(103, 232, 249, 0.12)",
+                    border: "1px solid rgba(103, 232, 249, 0.3)",
+                  }}
+                >
+                  <Typography variant="body2" sx={{ color: "#67e8f9", textAlign: "center" }}>
+                    {voteRecordedMessage}
+                  </Typography>
+                </Box>
+              )}
+              {game.resultVotes && (game.resultVotes.votesYin > 0 || game.resultVotes.votesYang > 0) && (
+                <Typography variant="caption" sx={{ display: "block", color: "rgba(255,255,255,0.5)", textAlign: "center", mb: 1 }}>
+                  {game.resultVotes.votesYin} vote{game.resultVotes.votesYin !== 1 ? "s" : ""} for Yin, {game.resultVotes.votesYang} for Yang. Two matching votes needed to confirm.
+                </Typography>
+              )}
               <Typography
                 variant="caption"
                 sx={{
@@ -322,38 +373,60 @@ export default function QueueMatchPage() {
                 <Button
                   variant="outlined"
                   size="medium"
-                  disabled={submitting}
+                  disabled={submitting || !canSubmitYin}
                   onClick={() => handleSubmitResult("yin")}
-                  sx={{
-                    borderColor: "rgba(103, 232, 249, 0.4)",
-                    color: "#67e8f9",
-                    textTransform: "none",
-                    fontWeight: 600,
-                    px: 3,
-                    "&:hover": {
-                      borderColor: "#67e8f9",
-                      bgcolor: "rgba(103, 232, 249, 0.12)",
-                    },
-                  }}
+                  sx={
+                    canSubmitYin
+                      ? {
+                          borderColor: "rgba(103, 232, 249, 0.4)",
+                          color: "#67e8f9",
+                          textTransform: "none",
+                          fontWeight: 600,
+                          px: 3,
+                          "&:hover": {
+                            borderColor: "#67e8f9",
+                            bgcolor: "rgba(103, 232, 249, 0.12)",
+                          },
+                        }
+                      : {
+                          borderColor: "rgba(255,255,255,0.2)",
+                          color: "rgba(255,255,255,0.4)",
+                          textTransform: "none",
+                          fontWeight: 600,
+                          px: 3,
+                          "&:hover": { borderColor: "rgba(255,255,255,0.2)", bgcolor: "transparent" },
+                        }
+                  }
                 >
                   Yin won
                 </Button>
                 <Button
                   variant="outlined"
                   size="medium"
-                  disabled={submitting}
+                  disabled={submitting || !canSubmitYang}
                   onClick={() => handleSubmitResult("yang")}
-                  sx={{
-                    borderColor: "rgba(249, 168, 212, 0.4)",
-                    color: "#f9a8d4",
-                    textTransform: "none",
-                    fontWeight: 600,
-                    px: 3,
-                    "&:hover": {
-                      borderColor: "#f9a8d4",
-                      bgcolor: "rgba(249, 168, 212, 0.12)",
-                    },
-                  }}
+                  sx={
+                    canSubmitYang
+                      ? {
+                          borderColor: "rgba(249, 168, 212, 0.4)",
+                          color: "#f9a8d4",
+                          textTransform: "none",
+                          fontWeight: 600,
+                          px: 3,
+                          "&:hover": {
+                            borderColor: "#f9a8d4",
+                            bgcolor: "rgba(249, 168, 212, 0.12)",
+                          },
+                        }
+                      : {
+                          borderColor: "rgba(255,255,255,0.2)",
+                          color: "rgba(255,255,255,0.4)",
+                          textTransform: "none",
+                          fontWeight: 600,
+                          px: 3,
+                          "&:hover": { borderColor: "rgba(255,255,255,0.2)", bgcolor: "transparent" },
+                        }
+                  }
                 >
                   Yang won
                 </Button>

@@ -275,8 +275,8 @@ export async function POST(
       return NextResponse.json({ error: "Placements must be 1, 2, 3, and 4." }, { status: 400 });
     }
 
-    if (!userInGame && !(isCreator && isAdmin)) {
-      return NextResponse.json({ error: "Only a player in the game or the creator (admin) can submit placements." }, { status: 403 });
+    if (!userInGame && !isAdmin) {
+      return NextResponse.json({ error: "Only a player in the game or an admin can submit placements." }, { status: 403 });
     }
 
     // Only record ranking for registered players; skip the one with no account
@@ -314,7 +314,7 @@ export async function POST(
     }
   }
 
-  // Team games: winner yin | yang
+  // Team games: winner yin | yang — require 2 agreeing votes to confirm
   const winner = body.winner;
   if (winner !== "yin" && winner !== "yang") {
     return NextResponse.json({ error: "winner must be yin or yang" }, { status: 400 });
@@ -326,17 +326,48 @@ export async function POST(
   const losingTeamCanSubmitYangWon = userInYin;
 
   const canSubmit =
-    (isCreator && isAdmin) ||
+    isAdmin ||
     (winner === "yin" && losingTeamCanSubmitYinWon) ||
     (winner === "yang" && losingTeamCanSubmitYangWon);
   if (!canSubmit) {
-    return NextResponse.json({ error: "Only the losing team can submit the result" }, { status: 403 });
+    return NextResponse.json({ error: "Only the losing team or an admin can submit the result" }, { status: 403 });
   }
 
-  const winningNames = winner === "yin" ? teamA.map((p) => p.name) : teamB.map((p) => p.name);
-  const losingNames = winner === "yin" ? teamB.map((p) => p.name) : teamA.map((p) => p.name);
+  const userId = session.user.id;
+  await prisma.teamBuilderResultVote.upsert({
+    where: {
+      gameId_userId: { gameId: id, userId },
+    },
+    create: { gameId: id, userId, winner },
+    update: { winner },
+  });
 
-  // For LoL/OW with unregistered players, only record ranking for registered players
+  const votes = await prisma.teamBuilderResultVote.findMany({
+    where: { gameId: id },
+    select: { winner: true },
+  });
+  const votesYin = votes.filter((v) => v.winner === "yin").length;
+  const votesYang = votes.filter((v) => v.winner === "yang").length;
+  const requiredVotes = 2;
+  let confirmedWinner =
+    votesYin >= requiredVotes ? "yin" : votesYang >= requiredVotes ? "yang" : null;
+  if (!confirmedWinner && isAdmin) {
+    confirmedWinner = winner;
+  }
+
+  if (!confirmedWinner) {
+    return NextResponse.json({
+      success: true,
+      voteRecorded: true,
+      votesYin,
+      votesYang,
+      message: "Your vote was recorded. One more matching vote is needed to confirm the result.",
+    });
+  }
+
+  const winningNames = confirmedWinner === "yin" ? teamA.map((p) => p.name) : teamB.map((p) => p.name);
+  const losingNames = confirmedWinner === "yin" ? teamB.map((p) => p.name) : teamA.map((p) => p.name);
+
   const winningForRanking = isLolOrOw
     ? winningNames.filter((name) => registeredNorm.has((name ?? "").trim().toLowerCase()))
     : winningNames;
@@ -359,8 +390,8 @@ export async function POST(
 
   await prisma.teamBuilderGame.update({
     where: { id },
-    data: { status: "result_submitted", winner },
+    data: { status: "result_submitted", winner: confirmedWinner },
   });
 
-  return NextResponse.json({ success: true, winner });
+  return NextResponse.json({ success: true, winner: confirmedWinner });
 }

@@ -25,10 +25,10 @@ export function RankedQueueGameNav() {
           href="/ranking/rankedcustom"
           className="px-3 py-1.5 rounded-lg text-sm font-semibold bg-blue-600/20 text-blue-200 border border-blue-500/50 hover:bg-blue-600/30 hover:border-blue-400/70 transition-colors shadow-sm"
         >
-          Ranked Custom
+          Custom leaderboard
         </Link>
         <span className="px-3 py-1.5 rounded-lg text-sm font-semibold bg-amber-500/90 text-amber-950 border border-amber-400/60 shadow-sm">
-          Ranked Queue
+          Ranked leaderboard
         </span>
       </div>
       <span className="text-neutral-500 text-xs font-medium uppercase tracking-wider mb-2 px-2">

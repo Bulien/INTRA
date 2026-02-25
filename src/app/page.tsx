@@ -59,28 +59,67 @@ function playerStats(
 
 export default function HomePage() {
   const router = useRouter();
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
   const [data, setData] = useState<Record<string, { players: RankingPlayer[]; maxSeason: number }>>({});
   const [loading, setLoading] = useState(true);
+  const [checkingInGame, setCheckingInGame] = useState(true);
+
+  useEffect(() => {
+    if (status !== "authenticated" || !session?.user) {
+      setCheckingInGame(false);
+      return;
+    }
+    let cancelled = false;
+    fetch("/api/nav", { cache: "no-store" })
+      .then((r) => r.ok ? r.json() : {})
+      .then((navData: { ongoingQueueMatchId?: string | null; pendingGamesCount?: number }) => {
+        if (cancelled) return;
+        const queueMatchId = navData.ongoingQueueMatchId ?? null;
+        const pendingCount = navData.pendingGamesCount ?? 0;
+        if (queueMatchId) {
+          router.replace(`/queue-match/${queueMatchId}`);
+          return;
+        }
+        if (pendingCount > 0) {
+          router.replace("/team-builder");
+          return;
+        }
+        setCheckingInGame(false);
+      })
+      .catch(() => setCheckingInGame(false));
+    return () => { cancelled = true; };
+  }, [status, session?.user, router]);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      const results = await Promise.all(
+        GAMES.map(async (g) => {
+          const first = await fetchRanking(g.slug, 1);
+          const latest = await fetchRanking(g.slug, first.maxSeason);
+          return { slug: g.slug, players: latest.players, maxSeason: first.maxSeason };
+        })
+      );
+      if (cancelled) return;
       const out: Record<string, { players: RankingPlayer[]; maxSeason: number }> = {};
-      for (const g of GAMES) {
-        const first = await fetchRanking(g.slug, 1);
-        const latest = await fetchRanking(g.slug, first.maxSeason);
-        if (!cancelled) out[g.slug] = { players: latest.players, maxSeason: first.maxSeason };
-      }
-      if (!cancelled) {
-        setData(out);
-        setLoading(false);
-      }
+      for (const r of results) out[r.slug] = { players: r.players, maxSeason: r.maxSeason };
+      setData(out);
+      setLoading(false);
     })();
     return () => {
       cancelled = true;
     };
   }, []);
+
+  if (status === "authenticated" && checkingInGame) {
+    return (
+      <Box sx={{ minHeight: "50vh", display: "flex", alignItems: "center", justifyContent: "center", py: 6 }}>
+        <Typography variant="body2" color="text.secondary">
+          Loading…
+        </Typography>
+      </Box>
+    );
+  }
 
   return (
     <Box sx={{ pb: 6 }}>
@@ -111,7 +150,7 @@ export default function HomePage() {
             gap: 1.5,
           }}
         >
-          <img src="/yin-yang.png" alt="" aria-hidden className="opacity-90 block mix-blend-multiply" style={{ height: 40, width: 40, background: 'transparent' }} />
+          <img src="/yinyang_gen2.png" alt="" aria-hidden className="opacity-90 block" style={{ height: 64, width: 64, background: 'transparent' }} />
           INTRA
         </Typography>
         <Typography

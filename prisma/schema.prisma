@@ -152,10 +152,23 @@ model TeamBuilderGame {
   source      String   @default("team_builder") // "team_builder" | "ranked_queue"
   createdAt   DateTime @default(now())
   createdBy   User     @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  resultVotes TeamBuilderResultVote[]
 
   @@index([status])
   @@index([createdAt])
   @@index([source])
+}
+
+model TeamBuilderResultVote {
+  id        String   @id @default(cuid())
+  gameId    String
+  userId    String
+  winner    String   // "yin" | "yang"
+  createdAt DateTime @default(now())
+  game      TeamBuilderGame @relation(fields: [gameId], references: [id], onDelete: Cascade)
+
+  @@unique([gameId, userId])
+  @@index([gameId])
 }
 
 model PlayerGameRating {

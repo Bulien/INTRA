@@ -1,0 +1,31 @@
+---
+description: Document major changes in PATCHNOTES.md — user-friendly, no code jargon
+alwaysApply: true
+---
+
+# Patch notes
+
+- **After every "major" change**, add an entry to **`PATCHNOTES.md`** in markdown format.
+
+**Audience:** People who use the app, including non-coders. Write so that someone who doesn’t code can understand what changed.
+
+**Style:**
+- **User-friendly:** Describe what’s new or different from the user’s point of view (what they can do, what they see, what’s better).
+- **No code or jargon:** Avoid technical terms (APIs, scripts, routes, refactors, etc.). Use plain language (e.g. “Ranked Queue” instead of “source=ranked_queue”, “matchmaking” instead of “queue pop”).
+- **Focus on functionality and UI:** New features, changed behavior, improved screens, new buttons or pages, fixes that affect what users see or do.
+- Keep each bullet short and clear.
+
+**"Major" means:** New or changed features, visible behavior, or UI that users would notice. Not required for internal/technical-only changes, typos, or dependency updates.
+
+**Format in PATCHNOTES.md:**
+- Use a dated section per release (e.g. `## [Unreleased]` or `## YYYY-MM-DD`).
+- Group by area when helpful (e.g. **Queue**, **Ranking**, **Team Builder**, **Profile**).
+- Write in second person (“You can…”) or neutral (“Battlerite is now available in matchmaking.”) as appropriate.
+
+Example (user-friendly):
+```markdown
+## [Unreleased]
+
+### Queue & matchmaking
+- **Battlerite** is now available in Ranked Queue. When 6 players are in queue, a match is created with two balanced teams of 3. The rest works like League of Legends and Overwatch: join queue, get matched, report who won.
+```

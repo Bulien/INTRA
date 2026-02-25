@@ -21,13 +21,13 @@ export function RankingGameNav() {
     <nav className="flex flex-col gap-0.5 shrink-0 pt-1">
       <div className="flex gap-2 mb-3 px-1">
         <span className="px-3 py-1.5 rounded-lg text-sm font-semibold bg-blue-600/90 text-white border border-blue-500/60 shadow-sm">
-          Ranked Custom
+          Custom leaderboard
         </span>
         <Link
           href={`/ranking/rankedqueue/${currentGame}`}
           className="px-3 py-1.5 rounded-lg text-sm font-semibold bg-amber-500/20 text-amber-200 border border-amber-500/50 hover:bg-amber-500/30 hover:border-amber-400/70 transition-colors shadow-sm"
         >
-          Ranked Queue
+          Ranked leaderboard
         </Link>
       </div>
       <span className="text-neutral-500 text-xs font-medium uppercase tracking-wider mb-2 px-2">

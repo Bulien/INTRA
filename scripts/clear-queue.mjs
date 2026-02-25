@@ -5,7 +5,7 @@
  *   Clear entire queue (all games):
  *     npx dotenv -e .env -- node scripts/clear-queue.mjs --confirm
  *
- *   Clear only one game (e.g. lol):
+ *   Clear only one game (e.g. lol, ow, battlerite):
  *     npx dotenv -e .env -- node scripts/clear-queue.mjs --confirm --game lol
  *
  * You must pass --confirm or nothing is deleted.

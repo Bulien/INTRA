@@ -1,7 +1,12 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { usePathname } from "next/navigation";
-import { NewJoinerNotice } from "@/components/NewJoinerNotice";
+
+const NewJoinerNotice = dynamic(
+  () => import("@/components/NewJoinerNotice").then((mod) => ({ default: mod.NewJoinerNotice })),
+  { ssr: false }
+);
 
 export function MainWrapper({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();

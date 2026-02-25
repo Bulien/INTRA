@@ -20,8 +20,14 @@ export async function POST(
     return NextResponse.json({ error: "Game is already finished or cancelled" }, { status: 400 });
   }
 
-  if (game.createdById !== session.user.id) {
-    return NextResponse.json({ error: "Only the game creator can cancel this game" }, { status: 403 });
+  const isAdmin = (session.user as { role?: string }).role === "admin";
+  const isCreator = game.createdById === session.user.id;
+  const isQueueGame = (game.source ?? "team_builder") === "ranked_queue";
+  if (isQueueGame && !isAdmin) {
+    return NextResponse.json({ error: "Only an admin can cancel a queue match" }, { status: 403 });
+  }
+  if (!isQueueGame && !isCreator && !isAdmin) {
+    return NextResponse.json({ error: "Only the game creator or an admin can cancel this game" }, { status: 403 });
   }
 
   await prisma.teamBuilderGame.update({
