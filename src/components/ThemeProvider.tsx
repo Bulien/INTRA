@@ -33,7 +33,7 @@ const theme = createTheme({
     h6: { fontWeight: 600, color: "#fafaf9" },
   },
   shape: {
-    borderRadius: 6,
+    borderRadius: 2,
   },
   components: {
     MuiButton: {

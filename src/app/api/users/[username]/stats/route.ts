@@ -32,7 +32,7 @@ export async function GET(
         { name: { equals: username, mode: "insensitive" } },
       ],
     },
-    select: { username: true, name: true },
+    select: { id: true, username: true, name: true },
   });
 
   if (!user) {
@@ -44,7 +44,7 @@ export async function GET(
 
   const byGame: Record<
     string,
-    { gamesPlayed: number; wins: number; losses: number; winrate: number | null; elo: number | null; label: string; averageRating: number | null; averagePlacement: number | null; rank: number | null }
+    { gamesPlayed: number; wins: number; losses: number; winrate: number | null; elo: number | null; eloTeamBuilder: number | null; eloQueue: number | null; label: string; averageRating: number | null; averagePlacement: number | null; rank: number | null; rankTeamBuilder: number | null; rankQueue: number | null }
   > = {};
 
   const avgRows = await (prisma as unknown as {
@@ -94,26 +94,52 @@ export async function GET(
 
     // Ladder rank: same sort as leaderboard (SC by avgPlace asc, team games by match-based Elo desc)
     let replayElos: Record<string, number> = {};
+    let replayElosTeamBuilder: Record<string, number> = {};
+    let replayElosQueue: Record<string, number> = {};
     if (TEAM_GAMES.includes(gameType as (typeof TEAM_GAMES)[number])) {
-      const teamGames = await prisma.teamBuilderGame.findMany({
-        where: { gameType, season, status: "result_submitted" },
-        orderBy: { createdAt: "asc" },
-        select: { id: true, teamA: true, teamB: true, winner: true, createdAt: true },
-      });
-      const replayGames = teamGames.map((g) => {
-        const teamA = (JSON.parse(g.teamA) as { name?: string }[]).map((p) => (p.name ?? "").trim()).filter(Boolean);
-        const teamB = (JSON.parse(g.teamB) as { name?: string }[]).map((p) => (p.name ?? "").trim()).filter(Boolean);
-        return {
-          id: g.id,
-          gameType,
-          season,
-          teamA,
-          teamB,
-          winner: g.winner as "yin" | "yang" | null,
-          createdAt: g.createdAt,
-        };
-      });
-      replayElos = replayElo(replayGames).elos;
+      const toReplayGames = (games: { teamA: string; teamB: string; winner: string | null; createdAt: Date }[]) =>
+        games.map((g) => {
+          const teamA = (JSON.parse(g.teamA) as { name?: string }[]).map((p) => (p.name ?? "").trim()).filter(Boolean);
+          const teamB = (JSON.parse(g.teamB) as { name?: string }[]).map((p) => (p.name ?? "").trim()).filter(Boolean);
+          return {
+            id: "",
+            gameType,
+            season,
+            teamA,
+            teamB,
+            winner: g.winner as "yin" | "yang" | null,
+            createdAt: g.createdAt,
+          };
+        });
+      const [teamGamesAll, teamGamesTB, teamGamesQueue] = await Promise.all([
+        prisma.teamBuilderGame.findMany({
+          where: { gameType, season, status: "result_submitted" },
+          orderBy: { createdAt: "asc" },
+          select: { id: true, teamA: true, teamB: true, winner: true, createdAt: true },
+        }),
+        prisma.teamBuilderGame.findMany({
+          where: { gameType, season, status: "result_submitted", source: "team_builder" },
+          orderBy: { createdAt: "asc" },
+          select: { teamA: true, teamB: true, winner: true, createdAt: true },
+        }),
+        prisma.teamBuilderGame.findMany({
+          where: { gameType, season, status: "result_submitted", source: "ranked_queue" },
+          orderBy: { createdAt: "asc" },
+          select: { teamA: true, teamB: true, winner: true, createdAt: true },
+        }),
+      ]);
+      const replayGamesAll = teamGamesAll.map((g) => ({
+        id: g.id,
+        gameType,
+        season,
+        teamA: (JSON.parse(g.teamA) as { name?: string }[]).map((p) => (p.name ?? "").trim()).filter(Boolean),
+        teamB: (JSON.parse(g.teamB) as { name?: string }[]).map((p) => (p.name ?? "").trim()).filter(Boolean),
+        winner: g.winner as "yin" | "yang" | null,
+        createdAt: g.createdAt,
+      }));
+      replayElos = replayElo(replayGamesAll).elos;
+      replayElosTeamBuilder = replayElo(toReplayGames(teamGamesTB)).elos;
+      replayElosQueue = replayElo(toReplayGames(teamGamesQueue)).elos;
     }
 
     const withSortKey = players.map((p) => {
@@ -134,17 +160,45 @@ export async function GET(
     const rankIndex = withSortKey.findIndex((p) => p.nameLower === userName);
     const rank = rankIndex >= 0 ? rankIndex + 1 : null;
 
+    let rankTeamBuilder: number | null = null;
+    let rankQueue: number | null = null;
+    if (TEAM_GAMES.includes(gameType as (typeof TEAM_GAMES)[number])) {
+      const withSortKeyTB = players.map((p) => ({
+        name: p.name,
+        sortKey: replayElosTeamBuilder[normalizeName(p.name)] ?? BASE_ELO,
+        nameLower: normalizeName(p.name),
+      }));
+      withSortKeyTB.sort((a, b) => b.sortKey - a.sortKey || (a.name ?? "").localeCompare(b.name ?? ""));
+      const idxTB = withSortKeyTB.findIndex((p) => p.nameLower === userName);
+      rankTeamBuilder = idxTB >= 0 ? idxTB + 1 : null;
+
+      const withSortKeyQueue = players.map((p) => ({
+        name: p.name,
+        sortKey: replayElosQueue[normalizeName(p.name)] ?? BASE_ELO,
+        nameLower: normalizeName(p.name),
+      }));
+      withSortKeyQueue.sort((a, b) => b.sortKey - a.sortKey || (a.name ?? "").localeCompare(b.name ?? ""));
+      const idxQueue = withSortKeyQueue.findIndex((p) => p.nameLower === userName);
+      rankQueue = idxQueue >= 0 ? idxQueue + 1 : null;
+    }
+
     const elo = gameType === "sc" ? null : (replayElos[userName] ?? (gamesPlayed > 0 ? BASE_ELO : null));
+    const eloTeamBuilder = gameType === "sc" ? null : (replayElosTeamBuilder[userName] ?? null);
+    const eloQueue = gameType === "sc" ? null : (replayElosQueue[userName] ?? null);
     byGame[gameType] = {
       gamesPlayed,
       wins,
       losses,
       winrate,
       elo,
+      eloTeamBuilder,
+      eloQueue,
       label: GAME_LABELS[gameType] ?? gameType,
       averageRating: gameType === "sc" ? null : (avgByGame[gameType] ?? null),
       averagePlacement: gameType === "sc" ? averagePlacement : null,
       rank,
+      rankTeamBuilder,
+      rankQueue,
     };
   }
 
@@ -205,5 +259,6 @@ export async function GET(
     mostFrequentTeammates,
     totalGames,
     userName: displayName || username,
+    userId: user.id,
   });
 }

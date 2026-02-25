@@ -37,10 +37,7 @@ export async function GET(req: Request) {
   } catch (err: unknown) {
     const prismaError = err as { code?: string; meta?: unknown };
     if (prismaError.code === "P2022") {
-      return NextResponse.json(
-        { error: "P2022_column_missing", debug: { meta: prismaError.meta } },
-        { status: 500 }
-      );
+      return NextResponse.json({ games: [] });
     }
     throw err;
   }
@@ -68,6 +65,7 @@ export async function GET(req: Request) {
         const by = (g as { createdBy?: { name?: string; username?: string } }).createdBy;
         return by?.name ?? by?.username ?? "Someone";
       })(),
+      source: g.source ?? "team_builder",
     })),
   });
 }

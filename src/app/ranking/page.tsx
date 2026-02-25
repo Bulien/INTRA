@@ -1,5 +1,5 @@
-import { redirect } from "next/navigation";
+import RankingIndexClient from "./RankingIndexClient";
 
 export default function RankingIndexPage() {
-  redirect("/ranking/lol");
+  return <RankingIndexClient />;
 }

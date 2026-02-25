@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { Box, Card, CardContent, Typography, Button, Skeleton } from "@mui/material";
 import EmojiEventsIcon from "@mui/icons-material/EmojiEvents";
 import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
@@ -58,6 +59,7 @@ function playerStats(
 
 export default function HomePage() {
   const router = useRouter();
+  const { data: session } = useSession();
   const [data, setData] = useState<Record<string, { players: RankingPlayer[]; maxSeason: number }>>({});
   const [loading, setLoading] = useState(true);
 
@@ -138,7 +140,7 @@ export default function HomePage() {
                   <Skeleton variant="text" width={140} height={32} />
                   <Skeleton variant="rounded" width={56} height={24} sx={{ borderRadius: 1 }} />
                 </div>
-                <ul className="space-y-0">
+                <ul className="space-y-2">
                   {Array.from({ length: 10 }).map((_, i) => (
                     <li key={i} className="flex items-center justify-between py-1.5 px-2 rounded-md gap-3">
                       <span className="flex items-center gap-2 min-w-0 flex-1">
@@ -171,7 +173,7 @@ export default function HomePage() {
               <Card
                 key={g.slug}
                 component={Link}
-                href={`/ranking/${g.slug}`}
+                href={`/ranking/rankedcustom/${g.slug}`}
                 sx={{
                   textDecoration: "none",
                   border: "1px solid",
@@ -220,8 +222,10 @@ export default function HomePage() {
                       No results yet
                     </Typography>
                   ) : (
-                    <ul className="space-y-0">
-                      {withAvg.map((p, i) => (
+                    <ul className="space-y-2">
+                      {withAvg.map((p, i) => {
+                        const isYou = Boolean(session?.user && (p.playerName ?? "").trim().toLowerCase() === (session.user?.name ?? session.user?.email ?? "").trim().toLowerCase());
+                        return (
                         <li
                           key={p.id}
                           className="flex items-center justify-between py-1.5 px-2 rounded-md gap-3"
@@ -240,7 +244,8 @@ export default function HomePage() {
                             )}
                             <button
                               type="button"
-                              className="font-medium truncate text-cyan-200 hover:text-cyan-100 hover:underline text-left bg-transparent border-0 cursor-pointer p-0"
+                              className={`font-medium truncate text-left bg-transparent border-0 cursor-pointer p-0 ${isYou ? "text-amber-300 hover:text-amber-200" : "text-cyan-200 hover:text-cyan-100"} hover:underline`}
+                              style={isYou ? { textShadow: "0 0 12px rgba(251, 191, 36, 0.6)" } : undefined}
                               onClick={(e) => {
                                 e.preventDefault();
                                 e.stopPropagation();
@@ -275,7 +280,8 @@ export default function HomePage() {
                             {g.slug === "sc" ? (p.games > 0 ? `Avg ${Number(p.avg).toFixed(1)}` : "—") : (p.elo !== null ? p.elo : "—")}
                           </Typography>
                         </li>
-                      ))}
+                        );
+                      })}
                     </ul>
                   )}
                   <Button

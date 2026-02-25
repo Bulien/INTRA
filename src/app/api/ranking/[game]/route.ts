@@ -37,19 +37,108 @@ export async function GET(
 
   const { searchParams } = new URL(_req.url);
   const season = Math.max(1, parseInt(searchParams.get("season") ?? "1", 10) || 1);
+  const source = searchParams.get("source") === "ranked_queue" ? "ranked_queue" : "team_builder";
 
-  const [players, gameSeason, seasonMeta] = await Promise.all([
+  const gameSeason = await prisma.gameSeason.findUnique({ where: { gameType: game } }).catch(() => null);
+  const maxSeason = gameSeason?.maxSeason ?? 1;
+
+  const teamGamesWhere = {
+    gameType: game,
+    season,
+    status: "result_submitted",
+    ...(source === "ranked_queue" ? { source: "ranked_queue" as const } : {}),
+  };
+  let teamGames: { id: string; teamA: string; teamB: string; winner: string | null; createdAt: Date }[];
+  try {
+    teamGames = await prisma.teamBuilderGame.findMany({
+      where: teamGamesWhere,
+      orderBy: { createdAt: "asc" },
+      select: { id: true, teamA: true, teamB: true, winner: true, createdAt: true },
+    });
+  } catch (err: unknown) {
+    if ((err as { code?: string }).code === "P2022") {
+      if (source === "ranked_queue") {
+        return NextResponse.json({
+          players: [],
+          maxSeason: gameSeason?.maxSeason ?? 1,
+          validatedGameIndices: [],
+          validatedPlayerIds: [],
+        });
+      }
+      teamGames = [];
+    } else {
+      throw err;
+    }
+  }
+
+  if (source === "ranked_queue") {
+    if (!TEAM_GAMES.includes(game)) {
+      return NextResponse.json({
+        players: [],
+        maxSeason,
+        validatedGameIndices: [],
+        validatedPlayerIds: [],
+      });
+    }
+    const replayGames = teamGames.map((g) => {
+      const teamA = (JSON.parse(g.teamA) as { name?: string }[]).map((p) => (p.name ?? "").trim()).filter(Boolean);
+      const teamB = (JSON.parse(g.teamB) as { name?: string }[]).map((p) => (p.name ?? "").trim()).filter(Boolean);
+      return {
+        id: g.id,
+        gameType: game,
+        season,
+        teamA,
+        teamB,
+        winner: g.winner as "yin" | "yang" | null,
+        createdAt: g.createdAt,
+      };
+    });
+    const { elos } = replayElo(replayGames);
+    const scoresByPlayer: Record<string, (number | null)[]> = {};
+    for (const g of replayGames) {
+      if (g.winner !== "yin" && g.winner !== "yang") continue;
+      const teamA = g.teamA.map((n) => (n ?? "").trim()).filter(Boolean);
+      const teamB = g.teamB.map((n) => (n ?? "").trim()).filter(Boolean);
+      for (const n of teamA) {
+        const key = normalizeName(n);
+        if (!scoresByPlayer[key]) scoresByPlayer[key] = [];
+        scoresByPlayer[key].push(g.winner === "yin" ? 1 : 0);
+      }
+      for (const n of teamB) {
+        const key = normalizeName(n);
+        if (!scoresByPlayer[key]) scoresByPlayer[key] = [];
+        scoresByPlayer[key].push(g.winner === "yang" ? 1 : 0);
+      }
+    }
+    const playerNames = Object.keys(scoresByPlayer).sort((a, b) => a.localeCompare(b));
+    const players = playerNames.map((name, i) => {
+      const scores = scoresByPlayer[name] ?? [];
+      const elo = elos[name] ?? BASE_ELO;
+      return {
+        id: `rq-${i}-${name}`,
+        playerName: name,
+        scores,
+        elo,
+      };
+    });
+    return NextResponse.json({
+      players,
+      maxSeason,
+      validatedGameIndices: [],
+      validatedPlayerIds: [],
+    });
+  }
+
+  const [players, seasonMeta] = await Promise.all([
     prisma.rankingPlayer.findMany({
       where: { gameType: game, season },
       orderBy: { name: "asc" },
     }),
-    prisma.gameSeason.findUnique({ where: { gameType: game } }).catch(() => null),
     prisma.seasonMeta.findUnique({
       where: { gameType_season: { gameType: game, season } },
     }).catch(() => null),
   ]);
 
-  const maxSeason = gameSeason?.maxSeason ?? 1;
   const validatedGameIndices: number[] = seasonMeta?.validatedIndices
     ? (JSON.parse(seasonMeta.validatedIndices) as number[])
     : [];
@@ -59,11 +148,6 @@ export async function GET(
 
   let elos: Record<string, number> = {};
   if (TEAM_GAMES.includes(game)) {
-    const teamGames = await prisma.teamBuilderGame.findMany({
-      where: { gameType: game, season, status: "result_submitted" },
-      orderBy: { createdAt: "asc" },
-      select: { id: true, teamA: true, teamB: true, winner: true, createdAt: true },
-    });
     const replayGames = teamGames.map((g) => {
       const teamA = (JSON.parse(g.teamA) as { name?: string }[]).map((p) => (p.name ?? "").trim()).filter(Boolean);
       const teamB = (JSON.parse(g.teamB) as { name?: string }[]).map((p) => (p.name ?? "").trim()).filter(Boolean);

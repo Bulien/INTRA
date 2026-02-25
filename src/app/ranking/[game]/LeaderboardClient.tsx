@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
+import { useSession } from "next-auth/react";
 import { Box, Skeleton, Typography } from "@mui/material";
 import EmojiEventsIcon from "@mui/icons-material/EmojiEvents";
 import { computeElo } from "@/lib/elo";
@@ -16,9 +17,12 @@ type PlayerRow = {
 
 async function fetchLeaderboard(
   gameType: string,
-  season: number
+  season: number,
+  source?: "ranked_queue"
 ): Promise<{ players: PlayerRow[]; maxSeason: number }> {
-  const res = await fetch(`/api/ranking/${gameType}?season=${season}`, {
+  const params = new URLSearchParams({ season: String(season) });
+  if (source) params.set("source", source);
+  const res = await fetch(`/api/ranking/${gameType}?${params.toString()}`, {
     cache: "no-store",
   });
   if (!res.ok) return { players: [], maxSeason: 1 };
@@ -60,10 +64,14 @@ type RowWithStats = PlayerRow & {
 export function LeaderboardClient({
   gameType,
   gameName,
+  rankingSource,
 }: {
   gameType: string;
   gameName: string;
+  /** When "ranked_queue", only queue-matched games are used for the ranking. */
+  rankingSource?: "ranked_queue";
 }) {
+  const { data: session } = useSession();
   const [players, setPlayers] = useState<RowWithStats[]>([]);
   const [season, setSeason] = useState(1);
   const [maxSeason, setMaxSeason] = useState(1);
@@ -73,13 +81,13 @@ export function LeaderboardClient({
   const load = useCallback(async () => {
     setLoading(true);
     const useSeason = initialLoadRef.current ? Math.min(Math.max(1, season), 999) : 1;
-    const data = await fetchLeaderboard(gameType, useSeason);
+    const data = await fetchLeaderboard(gameType, useSeason, rankingSource);
     setMaxSeason(data.maxSeason);
     if (!initialLoadRef.current) {
       initialLoadRef.current = true;
       const latestSeason = data.maxSeason;
       setSeason(latestSeason);
-      const latest = latestSeason !== useSeason ? await fetchLeaderboard(gameType, latestSeason) : data;
+      const latest = latestSeason !== useSeason ? await fetchLeaderboard(gameType, latestSeason, rankingSource) : data;
       const list = (latest.players ?? []).map((p) => ({
         ...p,
         ...computeStats(p.scores, gameType, p.elo),
@@ -103,7 +111,7 @@ export function LeaderboardClient({
       setPlayers(list);
     }
     setLoading(false);
-  }, [gameType, season]);
+  }, [gameType, season, rankingSource]);
 
   useEffect(() => {
     load();
@@ -164,7 +172,7 @@ export function LeaderboardClient({
             overflow: "auto",
             display: "flex",
             flexDirection: "column",
-            gap: 0,
+            gap: 1,
             pr: 1,
           }}
         >
@@ -176,6 +184,7 @@ export function LeaderboardClient({
             players.map((p, index) => {
               const rank = index + 1;
               const isSc = gameType === "sc";
+              const isYou = Boolean(session?.user && (p.playerName ?? "").trim().toLowerCase() === (session.user?.name ?? session.user?.email ?? "").trim().toLowerCase());
               return (
                 <Box
                   key={p.id}
@@ -207,8 +216,11 @@ export function LeaderboardClient({
                   </Box>
                   <Link
                     href={`/profile/${encodeURIComponent(p.playerName || "")}`}
-                    className="font-semibold text-cyan-200 hover:text-cyan-100 hover:underline truncate block"
-                    style={{ color: "inherit", textDecoration: "none" }}
+                    className={`font-semibold hover:underline truncate block ${isYou ? "text-amber-300 hover:text-amber-200" : "text-cyan-200 hover:text-cyan-100"}`}
+                    style={{
+                      textDecoration: "none",
+                      ...(isYou ? { color: "#fbbf24", textShadow: "0 0 12px rgba(251, 191, 36, 0.6)" } : {}),
+                    }}
                   >
                     {p.playerName || "—"}
                   </Link>

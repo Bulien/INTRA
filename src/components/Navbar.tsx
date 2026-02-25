@@ -36,6 +36,18 @@ type QueueData = {
   gameLabels: Record<string, string>;
 };
 
+type MatchedGame = {
+  id: string;
+  gameType: string;
+  season: number;
+  teamA: { id: string; name: string; rating: number }[];
+  teamB: { id: string; name: string; rating: number }[];
+  status: string;
+  createdAt: string;
+};
+
+type OnlineUser = { id: string; name: string | null; username: string | null };
+
 function isAdmin(session: { user?: { role?: string } | null } | null): boolean {
   return (session?.user as { role?: string } | undefined)?.role === "admin";
 }
@@ -52,25 +64,59 @@ export function Navbar() {
   const [activeGamesCount, setActiveGamesCount] = useState(0);
   const [playModalOpen, setPlayModalOpen] = useState(false);
   const [queueData, setQueueData] = useState<QueueData | null>(null);
-  const [queueMenuOpen, setQueueMenuOpen] = useState(false);
   const [queueTimerSeconds, setQueueTimerSeconds] = useState(0);
+  const [onlineUsers, setOnlineUsers] = useState<OnlineUser[]>([]);
+  const [onlineHovering, setOnlineHovering] = useState(false);
+  const [onlinePinned, setOnlinePinned] = useState(false);
+  const [queueHovering, setQueueHovering] = useState(false);
+  const [queuePinned, setQueuePinned] = useState(false);
+  const [matchedGameFromQueue, setMatchedGameFromQueue] = useState<MatchedGame | null>(null);
+  const [ongoingQueueMatchId, setOngoingQueueMatchId] = useState<string | null>(null);
+  const onlineMenuOpen = onlineHovering || onlinePinned;
+  const queueMenuOpen = queueHovering || queuePinned;
   const searchInputRef = useRef<HTMLInputElement>(null);
   const searchContainerRef = useRef<HTMLDivElement>(null);
   const queueMenuRef = useRef<HTMLDivElement>(null);
+  const onlineMenuRef = useRef<HTMLDivElement>(null);
+  const onlineCloseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const queueCloseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearOnlineCloseTimeout = () => {
+    if (onlineCloseTimeoutRef.current != null) {
+      clearTimeout(onlineCloseTimeoutRef.current);
+      onlineCloseTimeoutRef.current = null;
+    }
+  };
+  const clearQueueCloseTimeout = () => {
+    if (queueCloseTimeoutRef.current != null) {
+      clearTimeout(queueCloseTimeoutRef.current);
+      queueCloseTimeoutRef.current = null;
+    }
+  };
 
   useEffect(() => {
     if (status !== "authenticated" || !session?.user) {
       setActiveGamesCount(0);
+      setOngoingQueueMatchId(null);
       return;
     }
-    const fetchCount = () => {
+    const fetchPending = () => {
       fetch("/api/team-builder/games?status=pending", { cache: "no-store" })
         .then((res) => (res.ok ? res.json() : { games: [] }))
-        .then((data) => setActiveGamesCount((data.games ?? []).length))
-        .catch(() => setActiveGamesCount(0));
+        .then((data) => {
+          const games = data.games ?? [];
+          const teamBuilderGames = games.filter((g: { source?: string }) => g.source !== "ranked_queue");
+          setActiveGamesCount(teamBuilderGames.length);
+          const queueGame = games.find((g: { source?: string }) => g.source === "ranked_queue");
+          setOngoingQueueMatchId(queueGame?.id ?? null);
+        })
+        .catch(() => {
+          setActiveGamesCount(0);
+          setOngoingQueueMatchId(null);
+        });
     };
-    fetchCount();
-    const interval = setInterval(fetchCount, 15000);
+    fetchPending();
+    const interval = setInterval(fetchPending, 15000);
     return () => clearInterval(interval);
   }, [status, session?.user]);
 
@@ -83,6 +129,10 @@ export function Navbar() {
       playersByGame: data.playersByGame ?? { lol: [], ow: [], sc: [], battlerite: [] },
       gameLabels: data.gameLabels ?? {},
     });
+    if (data.matchedGame) {
+      setMatchedGameFromQueue(data.matchedGame);
+      setOngoingQueueMatchId(data.matchedGame.id);
+    }
   }, []);
 
   useEffect(() => {
@@ -107,12 +157,34 @@ export function Navbar() {
     return () => clearInterval(interval);
   }, [queueData?.myEntry?.joinedAt]);
 
+  const fetchOnline = useCallback(async () => {
+    const res = await fetch("/api/online", { cache: "no-store" });
+    if (!res.ok) return;
+    const data = await res.json();
+    setOnlineUsers(data.users ?? []);
+  }, []);
+
+  useEffect(() => {
+    if (status !== "authenticated" || !session?.user) {
+      setOnlineUsers([]);
+      return;
+    }
+    fetchOnline();
+    const interval = setInterval(fetchOnline, 4000);
+    return () => clearInterval(interval);
+  }, [status, session?.user, fetchOnline]);
+
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (queueMenuRef.current && !queueMenuRef.current.contains(e.target as Node)) setQueueMenuOpen(false);
+      if (queueMenuRef.current && !queueMenuRef.current.contains(e.target as Node)) setQueuePinned(false);
+      if (onlineMenuRef.current && !onlineMenuRef.current.contains(e.target as Node)) setOnlinePinned(false);
     };
     document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      clearOnlineCloseTimeout();
+      clearQueueCloseTimeout();
+    };
   }, []);
 
   const handleJoinQueue = async (gameType: string) => {
@@ -130,7 +202,7 @@ export function Navbar() {
   const handleLeaveQueue = async () => {
     const res = await fetch("/api/queue/leave", { method: "POST" });
     if (res.ok) {
-      setQueueMenuOpen(false);
+      setQueuePinned(false);
       fetchQueue();
     }
   };
@@ -241,19 +313,78 @@ export function Navbar() {
 
   return (
     <nav className="border-b border-cyan-500/20 bg-black/80 backdrop-blur-sm sticky top-0 z-50">
-      {session && queueData && (
+      {session && (
         <div
-          className="fixed top-0 right-0 z-[60] h-14 flex items-center pr-4 border-b border-cyan-500/20 bg-black/80 backdrop-blur-sm pl-6"
-          ref={queueMenuRef}
+          className="fixed top-0 left-0 z-[60] flex items-center pl-4 border-b border-cyan-500/20 bg-black/80 backdrop-blur-sm pr-6 h-14"
+          ref={onlineMenuRef}
+          onMouseEnter={() => { clearOnlineCloseTimeout(); setOnlineHovering(true); }}
+          onMouseLeave={() => { clearOnlineCloseTimeout(); onlineCloseTimeoutRef.current = setTimeout(() => setOnlineHovering(false), 200); }}
         >
           <button
             type="button"
-            onClick={() => setQueueMenuOpen((o) => !o)}
+            onClick={() => setOnlinePinned((o) => !o)}
+            className={`flex items-center gap-2 px-2.5 py-1.5 rounded-md text-sm font-medium transition-colors text-neutral-400 hover:text-cyan-200 hover:bg-cyan-500/10 border border-white/10 ${
+              onlineMenuOpen ? "shadow-[0_0_12px_rgba(103,232,249,0.4)]" : ""
+            }`}
+          >
+            <span className="font-medium">Online</span>
+            {onlineUsers.length > 0 ? (
+              <span className="flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-cyan-500/30 px-1.5 text-xs font-bold text-cyan-200">
+                {onlineUsers.length > 99 ? "99+" : onlineUsers.length}
+              </span>
+            ) : null}
+          </button>
+          {onlineMenuOpen && (
+            <div
+              className="absolute top-full left-4 mt-1 w-56 max-h-80 overflow-auto rounded-lg border border-cyan-500/30 bg-black/95 shadow-xl z-[100]"
+              onMouseEnter={() => { clearOnlineCloseTimeout(); setOnlineHovering(true); }}
+              onMouseLeave={() => { clearOnlineCloseTimeout(); onlineCloseTimeoutRef.current = setTimeout(() => setOnlineHovering(false), 200); }}
+            >
+              <div className="p-2 border-b border-white/10">
+                <span className="text-sm font-semibold text-cyan-200">Online now</span>
+              </div>
+              <ul className="p-2 space-y-0.5">
+                {onlineUsers.length === 0 ? (
+                  <li className="text-sm text-neutral-500 py-2 text-center">No one online</li>
+                ) : (
+                  onlineUsers.map((u) => {
+                    const isYou = session?.user?.id === u.id;
+                    const displayName = u.name ?? u.username ?? "—";
+                    return (
+                      <li key={u.id} className="flex items-center">
+                        <span className={`inline-block rounded py-0.5 px-1.5 text-sm truncate min-w-0 flex-1 ${isYou ? "border border-amber-400/50 shadow-[inset_0_0_12px_rgba(251,191,36,0.2)]" : "border border-transparent"}`}>
+                          <Link
+                            href={`/profile/${encodeURIComponent((u.username ?? u.name ?? "").trim() || "?")}`}
+                            className="block text-neutral-200 hover:text-cyan-200 transition-colors truncate"
+                            onClick={() => setOnlinePinned(false)}
+                          >
+                            {displayName}
+                          </Link>
+                        </span>
+                      </li>
+                    );
+                  })
+                )}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+      {session && queueData && (
+        <div
+          className="fixed top-0 right-0 z-[60] flex items-center pr-4 border-b border-cyan-500/20 bg-black/80 backdrop-blur-sm pl-6 h-14"
+          ref={queueMenuRef}
+          onMouseEnter={() => { clearQueueCloseTimeout(); setQueueHovering(true); }}
+          onMouseLeave={() => { clearQueueCloseTimeout(); queueCloseTimeoutRef.current = setTimeout(() => setQueueHovering(false), 200); }}
+        >
+          <button
+            type="button"
+            onClick={() => setQueuePinned((o) => !o)}
             className={`flex items-center gap-2 px-2.5 py-1.5 rounded-md text-sm font-medium transition-colors ${
               queueData.myEntry
                 ? "bg-red-500/20 text-red-300 border border-red-400/50 hover:bg-red-500/30 shadow-[0_0_14px_rgba(239,68,68,0.35)]"
                 : "text-neutral-400 hover:text-cyan-200 hover:bg-cyan-500/10 border border-white/10"
-            }`}
+            } ${queueMenuOpen ? "shadow-[0_0_12px_rgba(103,232,249,0.4)]" : ""}`}
           >
             {queueData.myEntry ? (
               <>
@@ -280,7 +411,11 @@ export function Navbar() {
             )}
           </button>
           {queueMenuOpen && (
-            <div className="absolute top-full right-4 mt-1 w-72 max-h-80 overflow-auto rounded-lg border border-cyan-500/30 bg-black/95 shadow-xl z-[100]">
+            <div
+              className="absolute top-full right-4 mt-1 w-72 max-h-80 overflow-auto rounded-lg border border-cyan-500/30 bg-black/95 shadow-xl z-[100]"
+              onMouseEnter={() => { clearQueueCloseTimeout(); setQueueHovering(true); }}
+              onMouseLeave={() => { clearQueueCloseTimeout(); queueCloseTimeoutRef.current = setTimeout(() => setQueueHovering(false), 200); }}
+            >
               <div className="p-2 border-b border-white/10 flex items-center justify-between">
                 <span className="text-sm font-semibold text-cyan-200">Players in queue</span>
                 {queueData.myEntry && (
@@ -304,17 +439,23 @@ export function Navbar() {
                         {label}
                       </div>
                       <ul className="space-y-0.5">
-                        {players.map((p) => (
-                          <li key={p.id}>
-                            <Link
-                              href={`/profile/${encodeURIComponent((p.username ?? p.name ?? "").trim() || "?")}`}
-                              className="block px-2 py-1 rounded text-sm text-neutral-200 hover:bg-white/10 hover:text-cyan-200 transition-colors truncate"
-                              onClick={() => setQueueMenuOpen(false)}
-                            >
-                              {p.name ?? p.username ?? "—"}
-                            </Link>
-                          </li>
-                        ))}
+                        {players.map((p) => {
+                          const isYou = session?.user?.id === p.id;
+                          const displayName = p.name ?? p.username ?? "—";
+                          return (
+                            <li key={p.id} className="flex items-center">
+                              <span className={`inline-block rounded py-0.5 px-1.5 text-sm truncate min-w-0 flex-1 ${isYou ? "border border-amber-400/50 shadow-[inset_0_0_12px_rgba(251,191,36,0.2)]" : "border border-transparent"}`}>
+                                <Link
+                                  href={`/profile/${encodeURIComponent((p.username ?? p.name ?? "").trim() || "?")}`}
+                                  className="block text-neutral-200 hover:text-cyan-200 transition-colors truncate"
+                                  onClick={() => setQueuePinned(false)}
+                                >
+                                  {displayName}
+                                </Link>
+                              </span>
+                            </li>
+                          );
+                        })}
                       </ul>
                     </div>
                   );
@@ -364,6 +505,15 @@ export function Navbar() {
               >
                 Admin
               </Link>
+            )}
+            {ongoingQueueMatchId && (
+              <button
+                type="button"
+                onClick={() => router.push(`/queue-match/${ongoingQueueMatchId}`)}
+                className="px-3 py-2 rounded-md text-sm font-semibold transition-colors bg-red-500/20 text-red-300 border border-red-400/50 hover:bg-red-500/30 shadow-[0_0_14px_rgba(239,68,68,0.4)] hover:shadow-[0_0_20px_rgba(239,68,68,0.5)]"
+              >
+                Ongoing game
+              </button>
             )}
             {navLinks.map((link) => {
               const isActive =
@@ -553,6 +703,72 @@ export function Navbar() {
               >
                 Cancel
               </button>
+            </div>
+          </div>,
+          document.body
+        )}
+
+      {matchedGameFromQueue && typeof document !== "undefined" &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[200] bg-black/60 backdrop-blur-md flex items-center justify-center p-4 cursor-pointer"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="matched-game-title"
+            onClick={() => {
+              if (matchedGameFromQueue?.id) {
+                router.push(`/queue-match/${matchedGameFromQueue.id}`);
+                setMatchedGameFromQueue(null);
+              }
+            }}
+          >
+            <div className="w-full max-w-lg bg-neutral-900 border border-cyan-500/40 rounded-xl shadow-2xl overflow-hidden pointer-events-none">
+              <div className="p-4 border-b border-white/10">
+                <h2 id="matched-game-title" className="text-lg font-bold text-cyan-200 flex items-center gap-2">
+                  <SportsEsportsIcon sx={{ color: "#67e8f9" }} />
+                  Match found — {QUEUE_GAMES.find((g) => g.id === matchedGameFromQueue.gameType)?.label ?? matchedGameFromQueue.gameType}
+                </h2>
+                <p className="text-sm text-neutral-400 mt-1">Your team is ready. Click anywhere to post the result after the game.</p>
+              </div>
+              <div className="grid grid-cols-2 gap-4 p-4">
+                <div className="rounded-lg p-3 bg-cyan-500/10 border border-cyan-500/30">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-semibold text-cyan-300 uppercase tracking-wider">Team Yin</span>
+                    <span className="text-sm font-semibold text-cyan-200 tabular-nums">
+                      {matchedGameFromQueue.teamA.reduce((s, p) => s + (p.rating ?? 0), 0)} ELO
+                    </span>
+                  </div>
+                  <ul className="space-y-1 text-sm text-neutral-200">
+                    {matchedGameFromQueue.teamA.map((p) => (
+                      <li key={p.id} className="flex justify-between">
+                        <span className="truncate">{p.name || "—"}</span>
+                        <span className="text-cyan-300 font-mono ml-2">{p.rating ?? "—"}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                <div className="rounded-lg p-3 bg-pink-500/10 border border-pink-500/30">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-semibold text-pink-300 uppercase tracking-wider">Team Yang</span>
+                    <span className="text-sm font-semibold text-pink-200 tabular-nums">
+                      {matchedGameFromQueue.teamB.reduce((s, p) => s + (p.rating ?? 0), 0)} ELO
+                    </span>
+                  </div>
+                  <ul className="space-y-1 text-sm text-neutral-200">
+                    {matchedGameFromQueue.teamB.map((p) => (
+                      <li key={p.id} className="flex justify-between">
+                        <span className="truncate">{p.name || "—"}</span>
+                        <span className="text-pink-300 font-mono ml-2">{p.rating ?? "—"}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+              <div className="p-4 border-t border-white/10">
+                <div className="py-2.5 rounded-lg text-center text-sm font-medium text-cyan-200">
+                  Click anywhere → Post results
+                </div>
+              </div>
             </div>
           </div>,
           document.body

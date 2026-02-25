@@ -8,6 +8,15 @@ const config: Config = {
   ],
   theme: {
     extend: {
+      borderRadius: {
+        DEFAULT: "2px",
+        sm: "2px",
+        md: "3px",
+        lg: "4px",
+        xl: "6px",
+        "2xl": "8px",
+        "3xl": "10px",
+      },
       colors: {
         surface: {
           50: "#fafaf9",

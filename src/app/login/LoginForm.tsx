@@ -44,7 +44,7 @@ export function LoginForm() {
             label="Pseudo"
             type="text"
             value={login}
-            onChange={(e) => setLogin(sanitizeDisplayName(e.target.value))}
+            onChange={(e) => setLogin(sanitizeDisplayName(e.target.value).replace(/\s/g, ""))}
             variant="outlined"
             size="medium"
             autoComplete="username"
@@ -55,7 +55,7 @@ export function LoginForm() {
             label="Password"
             type="password"
             value={password}
-            onChange={(e) => setPassword(sanitizePassword(e.target.value))}
+            onChange={(e) => setPassword(sanitizePassword(e.target.value).replace(/\s/g, ""))}
             variant="outlined"
             size="medium"
             autoComplete="current-password"

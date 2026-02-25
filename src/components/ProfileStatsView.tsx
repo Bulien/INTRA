@@ -6,10 +6,14 @@ import {
   Card,
   CardContent,
   Typography,
+  IconButton,
+  Tooltip,
 } from "@mui/material";
 import EmojiEventsIcon from "@mui/icons-material/EmojiEvents";
 import GroupsIcon from "@mui/icons-material/Groups";
 import SportsEsportsIcon from "@mui/icons-material/SportsEsports";
+import MessageIcon from "@mui/icons-material/Message";
+import { useOpenDm } from "@/contexts/OpenDmContext";
 
 export type GameStats = {
   gamesPlayed: number;
@@ -17,10 +21,14 @@ export type GameStats = {
   losses: number;
   winrate: number | null;
   elo?: number | null;
+  eloTeamBuilder?: number | null;
+  eloQueue?: number | null;
   label: string;
   averageRating?: number | null;
   averagePlacement?: number | null;
   rank?: number | null;
+  rankTeamBuilder?: number | null;
+  rankQueue?: number | null;
 };
 
 export type FavoriteTeammate = {
@@ -37,6 +45,7 @@ export type ProfileStats = {
   mostFrequentTeammates: { name: string; count: number }[];
   totalGames: number;
   userName: string;
+  userId?: string;
 };
 
 type ProfileStatsViewProps = {
@@ -50,6 +59,8 @@ export function ProfileStatsView({ stats, isOwnProfile = true }: ProfileStatsVie
   const mostFrequentTeammates = stats.mostFrequentTeammates ?? [];
   const totalGames = stats.totalGames ?? 0;
   const userName = stats.userName ?? "User";
+  const userId = stats.userId;
+  const { setOpenDmWithUserId } = useOpenDm();
 
   const youThey = isOwnProfile ? "you" : "they";
 
@@ -66,6 +77,29 @@ export function ProfileStatsView({ stats, isOwnProfile = true }: ProfileStatsVie
           borderBottom: "1px solid rgba(255,255,255,0.08)",
         }}
       >
+        {!isOwnProfile && userId && (
+          <Tooltip title="Message" placement="top" arrow>
+            <IconButton
+              onClick={() => setOpenDmWithUserId(userId)}
+              size="medium"
+              sx={{
+                color: "#fbbf24",
+                border: "1px solid rgba(251, 191, 36, 0.5)",
+                boxShadow: "0 0 12px rgba(251, 191, 36, 0.25), inset 0 0 8px rgba(251, 191, 36, 0.08)",
+                "&:hover": {
+                  bgcolor: "rgba(251, 191, 36, 0.12)",
+                  boxShadow: "0 0 16px rgba(251, 191, 36, 0.35), inset 0 0 8px rgba(251, 191, 36, 0.1)",
+                },
+                "& .MuiSvgIcon-root": {
+                  filter: "drop-shadow(0 0 6px rgba(251, 191, 36, 0.6))",
+                },
+              }}
+              aria-label="Open DM with this user"
+            >
+              <MessageIcon sx={{ fontSize: 26 }} />
+            </IconButton>
+          </Tooltip>
+        )}
         <Box
           sx={{
             px: 2,
@@ -147,16 +181,46 @@ export function ProfileStatsView({ stats, isOwnProfile = true }: ProfileStatsVie
                 <Box component="dt" sx={{ gridColumn: "1 / -1", color: "#67e8f9 !important", fontWeight: 700, fontSize: "0.9375rem !important", mb: 0.25 }}>
                   {g.label}
                 </Box>
-                {g.rank != null && (
+                {gameKey !== "sc" && (
+                  <>
+                    {g.eloTeamBuilder != null && (
+                      <>
+                        <Box component="dt">Team Builder</Box>
+                        <Box component="dd" sx={{ color: "#a5f3fc" }}>
+                          {g.eloTeamBuilder}
+                          {g.rankTeamBuilder != null && (
+                            <Box component="span" sx={{ color: "#fcd34d" }}> — #{g.rankTeamBuilder}</Box>
+                          )}
+                        </Box>
+                      </>
+                    )}
+                    <>
+                      <Box component="dt">Ranked Queue</Box>
+                      <Box component="dd" sx={{ color: "#a5f3fc" }}>
+                        {g.eloQueue != null ? (
+                          <>
+                            {g.eloQueue}
+                            {g.rankQueue != null && (
+                              <Box component="span" sx={{ color: "#fcd34d" }}> — #{g.rankQueue}</Box>
+                            )}
+                          </>
+                        ) : (
+                          <Box component="span" sx={{ color: "text.secondary", fontStyle: "italic" }}>Unranked</Box>
+                        )}
+                      </Box>
+                    </>
+                    {g.elo != null && g.eloTeamBuilder == null && g.eloQueue == null && (
+                      <>
+                        <Box component="dt">Elo</Box>
+                        <Box component="dd" sx={{ color: "#a5f3fc" }}>{g.elo}</Box>
+                      </>
+                    )}
+                  </>
+                )}
+                {gameKey !== "sc" && g.rank != null && g.eloTeamBuilder == null && g.eloQueue == null && (
                   <>
                     <Box component="dt">Rank</Box>
                     <Box component="dd" sx={{ color: "#a5f3fc" }}>#{g.rank}</Box>
-                  </>
-                )}
-                {gameKey !== "sc" && g.elo != null && (
-                  <>
-                    <Box component="dt">Elo</Box>
-                    <Box component="dd" sx={{ color: "#a5f3fc" }}>{g.elo}</Box>
                   </>
                 )}
                 <Box component="dt">Games</Box>

@@ -4,9 +4,11 @@ import { useState, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import ChatIcon from "@mui/icons-material/Chat";
 import { ChatPanel } from "@/components/ChatPanel";
+import { useOpenDm } from "@/contexts/OpenDmContext";
 
 export function BottomBar() {
   const { data: session, status } = useSession();
+  const { openDmWithUserId, setOpenDmWithUserId } = useOpenDm();
   const [chatOpen, setChatOpen] = useState(false);
   const [unreadDmCount, setUnreadDmCount] = useState(0);
 
@@ -46,6 +48,10 @@ export function BottomBar() {
     const interval = setInterval(fetchUnread, UNREAD_POLL_MS);
     return () => clearInterval(interval);
   }, [status, session?.user, fetchUnread]);
+
+  useEffect(() => {
+    if (openDmWithUserId) setChatOpen(true);
+  }, [openDmWithUserId]);
 
   const onReadDm = useCallback(
     (_channelId: string) => {
@@ -90,6 +96,8 @@ export function BottomBar() {
         open={chatOpen}
         onClose={() => setChatOpen(false)}
         onReadDm={onReadDm}
+        openDmWithUserId={openDmWithUserId}
+        onOpenDmConsumed={() => setOpenDmWithUserId(null)}
       />
     </>
   );

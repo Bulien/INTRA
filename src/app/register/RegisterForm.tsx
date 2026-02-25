@@ -75,7 +75,7 @@ export function RegisterForm() {
             label="Pseudo"
             type="text"
             value={login}
-            onChange={(e) => setLogin(sanitizeDisplayName(e.target.value))}
+            onChange={(e) => setLogin(sanitizeDisplayName(e.target.value).replace(/\s/g, ""))}
             variant="outlined"
             size="medium"
             autoComplete="username"
@@ -87,7 +87,7 @@ export function RegisterForm() {
             label="Password (min 6 characters)"
             type="password"
             value={password}
-            onChange={(e) => setPassword(sanitizePassword(e.target.value))}
+            onChange={(e) => setPassword(sanitizePassword(e.target.value).replace(/\s/g, ""))}
             variant="outlined"
             size="medium"
             autoComplete="new-password"
@@ -99,7 +99,7 @@ export function RegisterForm() {
             label="Confirm password"
             type="password"
             value={confirmPassword}
-            onChange={(e) => setConfirmPassword(sanitizePassword(e.target.value))}
+            onChange={(e) => setConfirmPassword(sanitizePassword(e.target.value).replace(/\s/g, ""))}
             variant="outlined"
             size="medium"
             autoComplete="new-password"

@@ -3,34 +3,48 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-const gameLinks = [
-  { href: "/ranking/lol", label: "LoL" },
-  { href: "/ranking/ow", label: "Overwatch" },
-  { href: "/ranking/sc", label: "Survival Chaos" },
-  { href: "/ranking/battlerite", label: "Battlerite" },
-];
+const BASE = "/ranking/rankedcustom";
+const gameSlugs = ["lol", "ow", "sc", "battlerite"] as const;
+const gameLabels: Record<string, string> = {
+  lol: "LoL",
+  ow: "Overwatch",
+  sc: "Survival Chaos",
+  battlerite: "Battlerite",
+};
 
 export function RankingGameNav() {
   const pathname = usePathname();
-  const isTablePage = pathname?.startsWith("/ranking/table");
+  const isTablePage = pathname?.startsWith(`${BASE}/table`);
+  const currentGame = pathname?.split("/").pop() ?? "lol";
 
   return (
     <nav className="flex flex-col gap-0.5 shrink-0 pt-1">
+      <div className="flex gap-2 mb-3 px-1">
+        <span className="px-3 py-1.5 rounded-lg text-sm font-semibold bg-blue-600/90 text-white border border-blue-500/60 shadow-sm">
+          Ranked Custom
+        </span>
+        <Link
+          href={`/ranking/rankedqueue/${currentGame}`}
+          className="px-3 py-1.5 rounded-lg text-sm font-semibold bg-amber-500/20 text-amber-200 border border-amber-500/50 hover:bg-amber-500/30 hover:border-amber-400/70 transition-colors shadow-sm"
+        >
+          Ranked Queue
+        </Link>
+      </div>
       <span className="text-neutral-500 text-xs font-medium uppercase tracking-wider mb-2 px-2">
         Game
       </span>
-      {gameLinks.map((link) => {
-        const isActive = isTablePage ? pathname === link.href.replace("/ranking/", "/ranking/table/") : pathname === link.href;
-        const href = isTablePage ? link.href.replace("/ranking/", "/ranking/table/") : link.href;
+      {gameSlugs.map((slug) => {
+        const href = isTablePage ? `${BASE}/table/${slug}` : `${BASE}/${slug}`;
+        const isActive = pathname === href;
         return (
           <Link
-            key={link.href}
+            key={slug}
             href={href}
             className={`px-3 py-2 rounded-md text-sm font-medium transition-colors w-fit ${
               isActive ? "text-cyan-300" : "text-neutral-400 hover:text-pink-200"
             }`}
           >
-            {link.label}
+            {gameLabels[slug]}
           </Link>
         );
       })}
@@ -39,13 +53,13 @@ export function RankingGameNav() {
       </span>
       <Link
         href={
-          pathname?.startsWith("/ranking/table")
-            ? "/ranking/" + (pathname?.split("/")[3] ?? "lol")
-            : "/ranking/table/" + (pathname?.split("/")[2] ?? "lol")
+          isTablePage
+            ? `${BASE}/${pathname?.split("/")[4] ?? "lol"}`
+            : `${BASE}/table/${pathname?.split("/")[3] ?? "lol"}`
         }
         className="px-3 py-2 rounded-md text-sm font-medium transition-colors w-fit text-neutral-400 hover:text-pink-200"
       >
-        {pathname?.startsWith("/ranking/table") ? "Leaderboard" : "Table"}
+        {isTablePage ? "Leaderboard" : "Table"}
       </Link>
     </nav>
   );

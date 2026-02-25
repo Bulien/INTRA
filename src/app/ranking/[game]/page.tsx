@@ -1,25 +1,11 @@
 import { redirect } from "next/navigation";
-import { LeaderboardClient } from "./LeaderboardClient";
 
-const GAMES: Record<string, string> = {
-  lol: "League of Legends",
-  ow: "Overwatch",
-  sc: "Survival Chaos",
-  battlerite: "Battlerite",
-};
-
-export default async function RankingPage({
+export default async function RankingGameRedirect({
   params,
 }: {
   params: Promise<{ game: string }>;
 }) {
   const { game } = await params;
   const valid = ["lol", "ow", "sc", "battlerite"];
-  if (!valid.includes(game)) {
-    redirect("/ranking/lol");
-  }
-
-  return (
-    <LeaderboardClient gameType={game} gameName={GAMES[game]} />
-  );
+  redirect(valid.includes(game) ? `/ranking/rankedcustom/${game}` : "/ranking/rankedcustom/lol");
 }

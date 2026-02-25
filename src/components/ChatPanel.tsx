@@ -26,10 +26,14 @@ export function ChatPanel({
   open,
   onClose,
   onReadDm,
+  openDmWithUserId = null,
+  onOpenDmConsumed,
 }: {
   open: boolean;
   onClose: () => void;
   onReadDm?: (channelId: string) => void;
+  openDmWithUserId?: string | null;
+  onOpenDmConsumed?: () => void;
 }) {
   const { data: session, status } = useSession();
   const [channelsData, setChannelsData] = useState<{
@@ -215,6 +219,28 @@ export function ChatPanel({
     setUserSearch("");
     fetchChannels();
   };
+
+  useEffect(() => {
+    if (!open || !openDmWithUserId || !onOpenDmConsumed) return;
+    let cancelled = false;
+    (async () => {
+      const res = await fetch("/api/chat/dm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ otherUserId: openDmWithUserId }),
+      });
+      if (cancelled) return;
+      onOpenDmConsumed();
+      if (!res.ok) return;
+      const data = await res.json();
+      setSelectedChannelId(data.channelId);
+      setShowUserList(false);
+      setShowGroupFlow(false);
+      setUserSearch("");
+      fetchChannels();
+    })();
+    return () => { cancelled = true; };
+  }, [open, openDmWithUserId, onOpenDmConsumed, fetchChannels]);
 
   const createGroup = async () => {
     const userIds = [...groupSelectedIds];

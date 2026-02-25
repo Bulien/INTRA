@@ -30,6 +30,7 @@ import ShuffleIcon from "@mui/icons-material/Shuffle";
 import HistoryIcon from "@mui/icons-material/History";
 import PersonIcon from "@mui/icons-material/Person";
 import { sanitizeDisplayName } from "@/lib/sanitizeInput";
+import { MatchCard, TeamColumn, TeamPlayerRow, VsDivider } from "@/components/MatchCard";
 
 const GAMES = [
   { value: "lol", label: "LoL", maxPlayers: 10 },
@@ -173,7 +174,8 @@ async function fetchActiveGames(): Promise<SharedGame[]> {
   const res = await fetch("/api/team-builder/games?status=pending", { cache: "no-store" });
   if (!res.ok) return [];
   const data = await res.json();
-  return data.games ?? [];
+  const games = data.games ?? [];
+  return games.filter((g: { source?: string }) => g.source !== "ranked_queue");
 }
 
 async function createSharedGame(
@@ -822,18 +824,10 @@ export default function TeamBuilderPage() {
   }, [chronoRunning]);
   const chronoDisplay = `${Math.floor(chronoSeconds / 60)}:${String(chronoSeconds % 60).padStart(2, "0")}`;
 
-  const isCreatorOfAnyActiveGame = activeSharedGames.some(
-    (g) => g.createdById && session?.user?.id && g.createdById === session.user.id
-  );
   const hasActiveSharedGame = Boolean(session?.user && activeSharedGames.length > 0);
   const isAdmin = (session?.user as { role?: string } | undefined)?.role === "admin";
-  const [hideSharedGamesOnlyView, setHideSharedGamesOnlyView] = useState(false);
-  useEffect(() => {
-    if (activeSharedGames.length === 0) setHideSharedGamesOnlyView(false);
-  }, [activeSharedGames.length]);
-  const showOnlySharedGames = Boolean(
-    session?.user && activeSharedGames.length > 0 && !isCreatorOfAnyActiveGame && !hideSharedGamesOnlyView
-  );
+  /** When user has any active shared game (they're in it), show only the result-posting view — no going back to builder. */
+  const showOnlySharedGames = Boolean(session?.user && activeSharedGames.length > 0);
 
   const bannedUntilIso = (session?.user as { bannedUntil?: string | null } | undefined)?.bannedUntil;
   const isBanned =
@@ -897,20 +891,11 @@ export default function TeamBuilderPage() {
   return (
     <>
       {showOnlySharedGames ? (
-      <Box
-        sx={{
-          minHeight: "calc(100vh - 8rem)",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          py: 4,
-        }}
-      >
-        <Typography variant="h4" sx={{ mb: 3, color: "text.primary", textAlign: "center" }}>
+      <Box sx={{ minHeight: "calc(100vh - 8rem)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", py: 4 }}>
+        <Typography variant="overline" sx={{ display: "block", color: "rgba(255,255,255,0.5)", letterSpacing: 1, mb: 2 }}>
           Team Builder
         </Typography>
-        <Box sx={{ width: "100%", maxWidth: 640, mx: "auto" }}>
+        <Box sx={{ width: "100%", maxWidth: 640, mx: "auto", display: "flex", flexDirection: "column", gap: 3 }}>
           {activeSharedGames.map((game) => {
             const un = (session?.user?.name ?? session?.user?.email ?? "").trim().toLowerCase();
             const inYin = game.teamA.some((p) => (p.name ?? "").trim().toLowerCase() === un);
@@ -938,232 +923,109 @@ export default function TeamBuilderPage() {
             const teamAScore = game.teamA.reduce((s, p) => s + (p.rating ?? 0), 0);
             const teamBScore = game.teamB.reduce((s, p) => s + (p.rating ?? 0), 0);
             return (
-              <Card
+              <MatchCard
                 key={game.id}
-                sx={{
-                  border: "2px solid",
-                  borderColor: "rgba(103,232,249,0.3)",
-                  bgcolor: "rgba(26,26,26,0.95)",
-                  boxShadow: "0 8px 32px rgba(0,0,0,0.4)",
-                }}
-              >
-                <CardContent sx={{ py: 3, px: 3 }}>
-                  <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 2 }}>
-                    {gameLabel} · Season {game.season} · by {game.createdByName}
-                  </Typography>
-                  {game.gameType === "sc" ? (
-                    <Box sx={{ p: 2, borderRadius: 1, bgcolor: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", mb: 3 }}>
-                      <ul className="list-none p-0 m-0 space-y-1">
-                        {[...game.teamA, ...game.teamB].map((p) => (
-                          <li key={p.id} className="flex justify-between text-sm items-center">
-                            <span className="flex items-center gap-1">
-                              <Link href={`/profile/${encodeURIComponent((p.name ?? "").trim())}`} className="text-neutral-200 hover:text-cyan-200 hover:underline">
-                                {p.name}
-                              </Link>
-                              {registeredNorm.has((p.name ?? "").trim().toLowerCase()) && (
-                                <Tooltip title="Has account" placement="top" arrow>
-                                  <PersonIcon sx={{ fontSize: 16, color: "#67e8f9" }} aria-label="Has account" />
-                                </Tooltip>
-                              )}
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
-                    </Box>
-                  ) : (
-                  <div className="grid grid-cols-2 gap-4 mb-3">
-                    <Box sx={{ p: 2, borderRadius: 1, bgcolor: "rgba(103,232,249,0.08)", border: "1px solid rgba(103,232,249,0.25)" }}>
-                      <Typography
-                        component="span"
-                        sx={{
-                          display: "inline-block",
-                          px: 1.5,
-                          py: 0.5,
-                          mb: 1.5,
-                          fontSize: "0.7rem",
-                          fontWeight: 800,
-                          letterSpacing: "0.2em",
-                          color: "#0f0f0f",
-                          bgcolor: "#67e8f9",
-                          borderRadius: 1,
-                          textTransform: "uppercase",
-                        }}
-                      >
-                        Team Yin
-                      </Typography>
-                      <Typography variant="subtitle1" sx={{ color: "#67e8f9", fontWeight: 700, mb: 1 }}>{`— ${teamAScore} pts`}</Typography>
-                      <ul className="list-none p-0 m-0 space-y-1">
-                        {game.teamA.map((p) => (
-                          <li key={p.id} className="flex justify-between text-sm">
-                            <span className="flex items-center gap-1">
-                              <Link href={`/profile/${encodeURIComponent((p.name ?? "").trim())}`} className="text-neutral-200 hover:text-cyan-200 hover:underline">
-                                {p.name}
-                              </Link>
-                              {registeredNorm.has((p.name ?? "").trim().toLowerCase()) && (
-                                <Tooltip title="Has account" placement="top" arrow>
-                                  <PersonIcon sx={{ fontSize: 16, color: "#67e8f9" }} aria-label="Has account" />
-                                </Tooltip>
-                              )}
-                            </span>
-                            <span className="font-semibold text-cyan-200">{p.rating ?? "—"}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </Box>
-                    <Box sx={{ p: 2, borderRadius: 1, bgcolor: "rgba(249,168,212,0.08)", border: "1px solid rgba(249,168,212,0.25)" }}>
-                      <Typography
-                        component="span"
-                        sx={{
-                          display: "inline-block",
-                          px: 1.5,
-                          py: 0.5,
-                          mb: 1.5,
-                          fontSize: "0.7rem",
-                          fontWeight: 800,
-                          letterSpacing: "0.2em",
-                          color: "#0f0f0f",
-                          bgcolor: "#f9a8d4",
-                          borderRadius: 1,
-                          textTransform: "uppercase",
-                        }}
-                      >
-                        Team Yang
-                      </Typography>
-                      <Typography variant="subtitle1" sx={{ color: "#f9a8d4", fontWeight: 700, mb: 1 }}>{`— ${teamBScore} pts`}</Typography>
-                      <ul className="list-none p-0 m-0 space-y-1">
-                        {game.teamB.map((p) => (
-                          <li key={p.id} className="flex justify-between text-sm">
-                            <span className="flex items-center gap-1">
-                              <Link href={`/profile/${encodeURIComponent((p.name ?? "").trim())}`} className="text-neutral-200 hover:text-cyan-200 hover:underline">
-                                {p.name}
-                              </Link>
-                              {registeredNorm.has((p.name ?? "").trim().toLowerCase()) && (
-                                <Tooltip title="Has account" placement="top" arrow>
-                                  <PersonIcon sx={{ fontSize: 16, color: "#67e8f9" }} aria-label="Has account" />
-                                </Tooltip>
-                              )}
-                            </span>
-                            <span className="font-semibold text-pink-200">{p.rating ?? "—"}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </Box>
-                  </div>
-                  )}
-                  <div className="flex gap-2 flex-wrap">
-                    {isCreator && (
-                      <Button
-                        size="medium"
-                        variant="outlined"
-                        disabled={cancellingGameId === game.id}
-                        onClick={() => handleCancelGame(game.id)}
-                        sx={{
-                          borderColor: "rgba(239,68,68,0.6)",
-                          color: "#fca5a5",
-                          "&:hover": { borderColor: "#ef4444", bgcolor: "rgba(239,68,68,0.1)" },
-                        }}
-                      >
-                        {cancellingGameId === game.id ? "Cancelling…" : "Cancel game"}
-                      </Button>
-                    )}
+                overline="Team builder"
+                title={gameLabel}
+                meta={`Season ${game.season} · by ${game.createdByName}`}
+                headerAction={isCreator ? (
+                  <Button size="small" variant="outlined" disabled={cancellingGameId === game.id} onClick={() => handleCancelGame(game.id)}
+                    sx={{ borderColor: "rgba(239,68,68,0.5)", color: "#fca5a5", "&:hover": { borderColor: "#ef4444", bgcolor: "rgba(239,68,68,0.1)" } }}>
+                    {cancellingGameId === game.id ? "Cancelling…" : "Cancel game"}
+                  </Button>
+                ) : undefined}
+                footer={
+                  <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
                     {canSubmitThisGame ? (
                       game.gameType === "sc" ? (
-                        <Button
-                          fullWidth
-                          variant="contained"
-                          size="large"
-                          onClick={() => openScPlacementsDialog(game)}
-                          sx={{
-                            py: 1.5,
-                            bgcolor: "#67e8f9",
-                            color: "#0f0f0f",
-                            fontWeight: 700,
-                            "&:hover": { bgcolor: "#22d3ee" },
-                          }}
-                        >
+                        <Button fullWidth variant="contained" size="large" onClick={() => openScPlacementsDialog(game)}
+                          sx={{ py: 1.5, bgcolor: "#67e8f9", color: "#0f0f0f", fontWeight: 700, "&:hover": { bgcolor: "#22d3ee" } }}>
                           Submit placements (1st–4th)
                         </Button>
                       ) : (
                         <>
-                          <Button
-                            fullWidth
-                            variant="contained"
-                            size="large"
-                            disabled={!canYin}
-                            onClick={() => openConfirmSharedResult(game.id, "yin")}
-                            sx={{
-                              py: 1.5,
-                              bgcolor: "#67e8f9",
-                              color: "#0f0f0f",
-                              fontWeight: 700,
-                              "&:hover": { bgcolor: "#22d3ee" },
-                            }}
-                          >
-                            Yin Won
-                          </Button>
-                          <Button
-                            fullWidth
-                            variant="contained"
-                            size="large"
-                            disabled={!canYang}
-                            onClick={() => openConfirmSharedResult(game.id, "yang")}
-                            sx={{
-                              py: 1.5,
-                              bgcolor: "#f9a8d4",
-                              color: "#0f0f0f",
-                              fontWeight: 700,
-                              "&:hover": { bgcolor: "#f472b6" },
-                            }}
-                          >
-                            Yang Won
-                          </Button>
+                          <Button fullWidth variant="contained" size="large" disabled={!canYin} onClick={() => openConfirmSharedResult(game.id, "yin")}
+                            sx={{ py: 1.5, bgcolor: "#67e8f9", color: "#0f0f0f", fontWeight: 700, "&:hover": { bgcolor: "#22d3ee" } }}>Yin Won</Button>
+                          <Button fullWidth variant="contained" size="large" disabled={!canYang} onClick={() => openConfirmSharedResult(game.id, "yang")}
+                            sx={{ py: 1.5, bgcolor: "#f9a8d4", color: "#0f0f0f", fontWeight: 700, "&:hover": { bgcolor: "#f472b6" } }}>Yang Won</Button>
                         </>
                       )
                     ) : (
                       <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5, width: "100%" }}>
                         <Typography variant="body2" color="text.secondary" sx={{ textAlign: "center" }}>
-                          {validateUserCount < minRequiredThisGame
-                            ? `Result submission requires at least ${minRequiredThisGame} registered players (${validateUserCount} currently).`
-                            : game.gameType === "sc"
-                              ? "At least 3 players in the game must have an account to submit results."
-                              : isLolOrOw
-                                ? "At least 6 players in the game must have an account to submit results for LoL/Overwatch."
-                                : "All players in the game must have an account to submit results."}
+                          {validateUserCount < minRequiredThisGame ? `Result submission requires at least ${minRequiredThisGame} registered players (${validateUserCount} currently).`
+                            : game.gameType === "sc" ? "At least 3 players in the game must have an account to submit results."
+                            : isLolOrOw ? "At least 6 players in the game must have an account to submit results for LoL/Overwatch."
+                            : "All players in the game must have an account to submit results."}
                         </Typography>
-                        <Button
-                          variant="outlined"
-                          size="medium"
-                          disabled={finishingGameId === game.id}
-                          onClick={() => handleFinishGame(game.id)}
-                          sx={{
-                            borderColor: "rgba(255,255,255,0.4)",
-                            color: "text.secondary",
-                            "&:hover": { borderColor: "rgba(255,255,255,0.6)", bgcolor: "rgba(255,255,255,0.06)" },
-                          }}
-                        >
+                        <Button variant="outlined" size="medium" disabled={finishingGameId === game.id} onClick={() => handleFinishGame(game.id)}
+                          sx={{ borderColor: "rgba(255,255,255,0.4)", color: "text.secondary", "&:hover": { borderColor: "rgba(255,255,255,0.6)", bgcolor: "rgba(255,255,255,0.06)" } }}>
                           {finishingGameId === game.id ? "Finishing…" : "Game finished"}
                         </Button>
                       </Box>
                     )}
-                  </div>
-                </CardContent>
-              </Card>
+                  </Box>
+                }
+              >
+                {game.gameType === "sc" ? (
+                  <Box sx={{ py: 2, px: 2 }}>
+                    <Box component="ul" sx={{ m: 0, py: 1, px: 0, listStyle: "none" }}>
+                      {[...game.teamA, ...game.teamB].map((p) => (
+                        <TeamPlayerRow key={p.id} name={p.name ?? ""} rating="—" color="#67e8f9">
+                          <><Link href={`/profile/${encodeURIComponent((p.name ?? "").trim())}`} className="text-neutral-200 hover:text-cyan-200 hover:underline">{p.name}</Link>
+                          {registeredNorm.has((p.name ?? "").trim().toLowerCase()) && <Tooltip title="Has account" placement="top" arrow><PersonIcon sx={{ fontSize: 16, color: "#67e8f9" }} /></Tooltip>}</>
+                        </TeamPlayerRow>
+                      ))}
+                    </Box>
+                  </Box>
+                ) : (
+                  <Box sx={{ display: "flex", flexDirection: { xs: "column", sm: "row" }, alignItems: "stretch" }}>
+                    <TeamColumn name="Team Yin" totalElo={teamAScore} color="#67e8f9" accent="#67e8f9">
+                      {game.teamA.map((p) => {
+                        const isYou = Boolean(session?.user && (p.name ?? "").trim().toLowerCase() === (session.user?.name ?? session.user?.email ?? "").trim().toLowerCase());
+                        return (
+                          <TeamPlayerRow key={p.id} name={p.name ?? ""} rating={p.rating ?? "—"} color="#67e8f9">
+                            {isYou ? (
+                              <Box component="span" sx={{ border: "1px solid rgba(251, 191, 36, 0.5)", borderRadius: 1.5, boxShadow: "inset 0 0 12px rgba(251, 191, 36, 0.2)", px: 0.5, py: 0.25, display: "inline-flex", alignItems: "center", gap: 0.5 }}>
+                                <Link href={`/profile/${encodeURIComponent((p.name ?? "").trim())}`} className="text-cyan-200 hover:underline">{p.name}</Link>
+                                {registeredNorm.has((p.name ?? "").trim().toLowerCase()) && <Tooltip title="Has account" placement="top" arrow><PersonIcon sx={{ fontSize: 16, color: "#67e8f9" }} /></Tooltip>}
+                              </Box>
+                            ) : (
+                              <Box component="span" sx={{ display: "inline-flex", alignItems: "center", gap: 0.5 }}>
+                                <Link href={`/profile/${encodeURIComponent((p.name ?? "").trim())}`} className="text-neutral-200 hover:text-cyan-200 hover:underline">{p.name}</Link>
+                                {registeredNorm.has((p.name ?? "").trim().toLowerCase()) && <Tooltip title="Has account" placement="top" arrow><PersonIcon sx={{ fontSize: 16, color: "#67e8f9" }} /></Tooltip>}
+                              </Box>
+                            )}
+                          </TeamPlayerRow>
+                        );
+                      })}
+                    </TeamColumn>
+                    <VsDivider />
+                    <TeamColumn name="Team Yang" totalElo={teamBScore} color="#f9a8d4" accent="#f9a8d4">
+                      {game.teamB.map((p) => {
+                        const isYouB = Boolean(session?.user && (p.name ?? "").trim().toLowerCase() === (session.user?.name ?? session.user?.email ?? "").trim().toLowerCase());
+                        return (
+                          <TeamPlayerRow key={p.id} name={p.name ?? ""} rating={p.rating ?? "—"} color="#f9a8d4">
+                            {isYouB ? (
+                              <Box component="span" sx={{ border: "1px solid rgba(251, 191, 36, 0.5)", borderRadius: 1.5, boxShadow: "inset 0 0 12px rgba(251, 191, 36, 0.2)", px: 0.5, py: 0.25, display: "inline-flex", alignItems: "center", gap: 0.5 }}>
+                                <Link href={`/profile/${encodeURIComponent((p.name ?? "").trim())}`} className="text-pink-200 hover:underline">{p.name}</Link>
+                                {registeredNorm.has((p.name ?? "").trim().toLowerCase()) && <Tooltip title="Has account" placement="top" arrow><PersonIcon sx={{ fontSize: 16, color: "#67e8f9" }} /></Tooltip>}
+                              </Box>
+                            ) : (
+                              <Box component="span" sx={{ display: "inline-flex", alignItems: "center", gap: 0.5 }}>
+                                <Link href={`/profile/${encodeURIComponent((p.name ?? "").trim())}`} className="text-neutral-200 hover:text-pink-200 hover:underline">{p.name}</Link>
+                                {registeredNorm.has((p.name ?? "").trim().toLowerCase()) && <Tooltip title="Has account" placement="top" arrow><PersonIcon sx={{ fontSize: 16, color: "#67e8f9" }} /></Tooltip>}
+                              </Box>
+                            )}
+                          </TeamPlayerRow>
+                        );
+                      })}
+                    </TeamColumn>
+                  </Box>
+                )}
+              </MatchCard>
             );
           })}
-          <Box sx={{ textAlign: "center", mt: 2 }}>
-            <Button
-              variant="outlined"
-              size="small"
-              onClick={() => setHideSharedGamesOnlyView(true)}
-              sx={{
-                borderColor: "rgba(255,255,255,0.3)",
-                color: "text.secondary",
-                "&:hover": { borderColor: "rgba(255,255,255,0.5)", bgcolor: "rgba(255,255,255,0.06)" },
-              }}
-            >
-              Continue to team builder
-            </Button>
-          </Box>
         </Box>
       </Box>
       ) : (
@@ -1659,25 +1521,11 @@ export default function TeamBuilderPage() {
       )}
 
       {session?.user && activeSharedGames.length > 0 && (
-        <Box
-          sx={{
-            width: "100%",
-            mb: 4,
-            py: 4,
-            px: 0,
-            bgcolor: "rgba(0,0,0,0.25)",
-            borderRadius: 2,
-            border: "1px solid rgba(255,255,255,0.06)",
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-          }}
-        >
-          <Typography variant="h5" sx={{ mb: 3, color: "text.primary", textAlign: "center", fontWeight: 600 }}>
+        <Box sx={{ width: "100%", mb: 4 }}>
+          <Typography variant="overline" sx={{ display: "block", color: "rgba(255,255,255,0.5)", letterSpacing: 1, mb: 2 }}>
             Games waiting for result
           </Typography>
-          <Box sx={{ width: "100%" }}>
-            <div className="grid grid-cols-1 gap-4" style={{ width: "100%" }}>
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
               {activeSharedGames.map((game) => {
                 const un = (session?.user?.name ?? session?.user?.email ?? "").trim().toLowerCase();
                 const inYin = game.teamA.some((p) => (p.name ?? "").trim().toLowerCase() === un);
@@ -1705,137 +1553,28 @@ export default function TeamBuilderPage() {
                 const teamAScore = game.teamA.reduce((s, p) => s + (p.rating ?? 0), 0);
                 const teamBScore = game.teamB.reduce((s, p) => s + (p.rating ?? 0), 0);
                 return (
-                  <Card
+                  <MatchCard
                     key={game.id}
-                    sx={{
-                      border: "2px solid",
-                      borderColor: "rgba(255,255,255,0.15)",
-                      bgcolor: "rgba(26,26,26,0.8)",
-                      boxShadow: "0 4px 20px rgba(0,0,0,0.3)",
-                    }}
-                  >
-                    <CardContent sx={{ py: 3, px: 3 }}>
-                      <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 2, mb: 2 }}>
-                        <Typography variant="body2" color="text.secondary" display="block">
-                          {gameLabel} · Season {game.season} · by {game.createdByName}
-                        </Typography>
-                        {isCreator && (
-                          <Button
-                            size="small"
-                            variant="outlined"
-                            disabled={cancellingGameId === game.id}
-                            onClick={() => handleCancelGame(game.id)}
-                            sx={{
-                              borderColor: "rgba(239,68,68,0.6)",
-                              color: "#fca5a5",
-                              flexShrink: 0,
-                              "&:hover": { borderColor: "#ef4444", bgcolor: "rgba(239,68,68,0.1)" },
-                            }}
-                          >
-                            {cancellingGameId === game.id ? "Cancelling…" : "Cancel game"}
-                          </Button>
-                        )}
-                      </Box>
-                      {game.gameType === "sc" ? (
-                        <Box sx={{ p: 2.5, borderRadius: 1, bgcolor: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", mb: 4 }}>
-                          <ul className="list-none p-0 m-0 space-y-1 text-neutral-300">
-                            {[...game.teamA, ...game.teamB].map((p) => (
-                              <li key={p.id} className="flex justify-between text-base items-center">
-                                <span className="flex items-center gap-1">
-                                  <Link href={`/profile/${encodeURIComponent((p.name ?? "").trim())}`} className="hover:text-cyan-200 hover:underline">
-                                    {p.name}
-                                  </Link>
-                                  {registeredNorm2.has((p.name ?? "").trim().toLowerCase()) && (
-                                    <Tooltip title="Has account" placement="top" arrow>
-                                      <PersonIcon sx={{ fontSize: 16, color: "#67e8f9" }} aria-label="Has account" />
-                                    </Tooltip>
-                                  )}
-                                </span>
-                              </li>
-                            ))}
-                          </ul>
-                        </Box>
-                      ) : (
-                      <div className="grid grid-cols-2 gap-4 mb-4">
-                        <Box sx={{ p: 2.5, borderRadius: 1, bgcolor: "rgba(103,232,249,0.1)", border: "1px solid rgba(103,232,249,0.3)" }}>
-                          <Typography
-                            component="span"
-                            sx={{
-                              display: "inline-block",
-                              px: 1.5,
-                              py: 0.5,
-                              mb: 1.5,
-                              fontSize: "0.7rem",
-                              fontWeight: 800,
-                              letterSpacing: "0.2em",
-                              color: "#0f0f0f",
-                              bgcolor: "#67e8f9",
-                              borderRadius: 1,
-                              textTransform: "uppercase",
-                            }}
-                          >
-                            Team Yin
-                          </Typography>
-                          <Typography variant="subtitle1" sx={{ color: "#67e8f9", fontWeight: 700, mb: 1 }}>{`— ${teamAScore} pts`}</Typography>
-                          <ul className="list-none p-0 m-0 space-y-1 text-neutral-300">
-                            {game.teamA.map((p) => (
-                              <li key={p.id} className="flex justify-between text-base">
-                                <span className="flex items-center gap-1">
-                                  <Link href={`/profile/${encodeURIComponent((p.name ?? "").trim())}`} className="hover:text-cyan-200 hover:underline">
-                                    {p.name}
-                                  </Link>
-                                  {registeredNorm2.has((p.name ?? "").trim().toLowerCase()) && (
-                                    <Tooltip title="Has account" placement="top" arrow>
-                                      <PersonIcon sx={{ fontSize: 16, color: "#67e8f9" }} aria-label="Has account" />
-                                    </Tooltip>
-                                  )}
-                                </span>
-                                <span className="font-semibold text-cyan-200">{p.rating ?? "—"}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        </Box>
-                        <Box sx={{ p: 2.5, borderRadius: 1, bgcolor: "rgba(249,168,212,0.1)", border: "1px solid rgba(249,168,212,0.3)" }}>
-                          <Typography
-                            component="span"
-                            sx={{
-                              display: "inline-block",
-                              px: 1.5,
-                              py: 0.5,
-                              mb: 1.5,
-                              fontSize: "0.7rem",
-                              fontWeight: 800,
-                              letterSpacing: "0.2em",
-                              color: "#0f0f0f",
-                              bgcolor: "#f9a8d4",
-                              borderRadius: 1,
-                              textTransform: "uppercase",
-                            }}
-                          >
-                            Team Yang
-                          </Typography>
-                          <Typography variant="subtitle1" sx={{ color: "#f9a8d4", fontWeight: 700, mb: 1 }}>{`— ${teamBScore} pts`}</Typography>
-                          <ul className="list-none p-0 m-0 space-y-1 text-neutral-300">
-                            {game.teamB.map((p) => (
-                              <li key={p.id} className="flex justify-between text-base">
-                                <span className="flex items-center gap-1">
-                                  <Link href={`/profile/${encodeURIComponent((p.name ?? "").trim())}`} className="hover:text-cyan-200 hover:underline">
-                                    {p.name}
-                                  </Link>
-                                  {registeredNorm2.has((p.name ?? "").trim().toLowerCase()) && (
-                                    <Tooltip title="Has account" placement="top" arrow>
-                                      <PersonIcon sx={{ fontSize: 16, color: "#67e8f9" }} aria-label="Has account" />
-                                    </Tooltip>
-                                  )}
-                                </span>
-                                <span className="font-semibold text-pink-200">{p.rating ?? "—"}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        </Box>
-                      </div>
-                      )}
-                      <div className="flex gap-2">
+                    overline="Team builder"
+                    title={gameLabel}
+                    meta={`Season ${game.season} · by ${game.createdByName}`}
+                    headerAction={isCreator ? (
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        disabled={cancellingGameId === game.id}
+                        onClick={() => handleCancelGame(game.id)}
+                        sx={{
+                          borderColor: "rgba(239,68,68,0.5)",
+                          color: "#fca5a5",
+                          "&:hover": { borderColor: "#ef4444", bgcolor: "rgba(239,68,68,0.1)" },
+                        }}
+                      >
+                        {cancellingGameId === game.id ? "Cancelling…" : "Cancel game"}
+                      </Button>
+                    ) : undefined}
+                    footer={
+                      <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
                         {canSubmitThisGame2 ? (
                           game.gameType === "sc" ? (
                             <Button
@@ -1915,12 +1654,76 @@ export default function TeamBuilderPage() {
                             </Button>
                           </Box>
                         )}
-                      </div>
-                    </CardContent>
-                  </Card>
+                      </Box>
+                    }
+                  >
+                    {game.gameType === "sc" ? (
+                      <Box sx={{ py: 2, px: 2 }}>
+                        <Box component="ul" sx={{ m: 0, py: 1, px: 0, listStyle: "none" }}>
+                          {[...game.teamA, ...game.teamB].map((p) => (
+                            <TeamPlayerRow key={p.id} name={p.name ?? ""} rating="—" color="#67e8f9">
+                              <>
+                                <Link href={`/profile/${encodeURIComponent((p.name ?? "").trim())}`} className="text-neutral-200 hover:text-cyan-200 hover:underline">
+                                  {p.name}
+                                </Link>
+                                {registeredNorm2.has((p.name ?? "").trim().toLowerCase()) && (
+                                  <Tooltip title="Has account" placement="top" arrow>
+                                    <PersonIcon sx={{ fontSize: 16, color: "#67e8f9" }} />
+                                  </Tooltip>
+                                )}
+                              </>
+                            </TeamPlayerRow>
+                          ))}
+                        </Box>
+                      </Box>
+                    ) : (
+                      <Box sx={{ display: "flex", flexDirection: { xs: "column", sm: "row" }, alignItems: "stretch" }}>
+                        <TeamColumn name="Team Yin" totalElo={teamAScore} color="#67e8f9" accent="#67e8f9">
+                          {game.teamA.map((p) => {
+                            const isYouA2 = Boolean(session?.user && (p.name ?? "").trim().toLowerCase() === (session.user?.name ?? session.user?.email ?? "").trim().toLowerCase());
+                            return (
+                              <TeamPlayerRow key={p.id} name={p.name ?? ""} rating={p.rating ?? "—"} color="#67e8f9">
+                                {isYouA2 ? (
+                                  <Box component="span" sx={{ border: "1px solid rgba(251, 191, 36, 0.5)", borderRadius: 1.5, boxShadow: "inset 0 0 12px rgba(251, 191, 36, 0.2)", px: 0.5, py: 0.25, display: "inline-flex", alignItems: "center", gap: 0.5 }}>
+                                    <Link href={`/profile/${encodeURIComponent((p.name ?? "").trim())}`} className="text-cyan-200 hover:underline">{p.name}</Link>
+                                    {registeredNorm2.has((p.name ?? "").trim().toLowerCase()) && <Tooltip title="Has account" placement="top" arrow><PersonIcon sx={{ fontSize: 16, color: "#67e8f9" }} /></Tooltip>}
+                                  </Box>
+                                ) : (
+                                  <Box component="span" sx={{ display: "inline-flex", alignItems: "center", gap: 0.5 }}>
+                                    <Link href={`/profile/${encodeURIComponent((p.name ?? "").trim())}`} className="text-neutral-200 hover:text-cyan-200 hover:underline">{p.name}</Link>
+                                    {registeredNorm2.has((p.name ?? "").trim().toLowerCase()) && <Tooltip title="Has account" placement="top" arrow><PersonIcon sx={{ fontSize: 16, color: "#67e8f9" }} /></Tooltip>}
+                                  </Box>
+                                )}
+                              </TeamPlayerRow>
+                            );
+                          })}
+                        </TeamColumn>
+                        <VsDivider />
+                        <TeamColumn name="Team Yang" totalElo={teamBScore} color="#f9a8d4" accent="#f9a8d4">
+                          {game.teamB.map((p) => {
+                            const isYouB2 = Boolean(session?.user && (p.name ?? "").trim().toLowerCase() === (session.user?.name ?? session.user?.email ?? "").trim().toLowerCase());
+                            return (
+                              <TeamPlayerRow key={p.id} name={p.name ?? ""} rating={p.rating ?? "—"} color="#f9a8d4">
+                                {isYouB2 ? (
+                                  <Box component="span" sx={{ border: "1px solid rgba(251, 191, 36, 0.5)", borderRadius: 1.5, boxShadow: "inset 0 0 12px rgba(251, 191, 36, 0.2)", px: 0.5, py: 0.25, display: "inline-flex", alignItems: "center", gap: 0.5 }}>
+                                    <Link href={`/profile/${encodeURIComponent((p.name ?? "").trim())}`} className="text-pink-200 hover:underline">{p.name}</Link>
+                                    {registeredNorm2.has((p.name ?? "").trim().toLowerCase()) && <Tooltip title="Has account" placement="top" arrow><PersonIcon sx={{ fontSize: 16, color: "#67e8f9" }} /></Tooltip>}
+                                  </Box>
+                                ) : (
+                                  <Box component="span" sx={{ display: "inline-flex", alignItems: "center", gap: 0.5 }}>
+                                    <Link href={`/profile/${encodeURIComponent((p.name ?? "").trim())}`} className="text-neutral-200 hover:text-pink-200 hover:underline">{p.name}</Link>
+                                    {registeredNorm2.has((p.name ?? "").trim().toLowerCase()) && <Tooltip title="Has account" placement="top" arrow><PersonIcon sx={{ fontSize: 16, color: "#67e8f9" }} /></Tooltip>}
+                                  </Box>
+                                )}
+                              </TeamPlayerRow>
+                            );
+                          })}
+                        </TeamColumn>
+                      </Box>
+                    )}
+                  </MatchCard>
                 );
               })}
-            </div>
           </Box>
         </Box>
       )}

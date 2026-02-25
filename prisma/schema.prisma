@@ -43,6 +43,7 @@ model User {
   password                String?
   role                    String            @default("user")
   bannedUntil             DateTime?
+  lastSeenAt              DateTime?
   createdAt               DateTime          @default(now())
   accounts                Account[]
   gameResults             GameResult[]
@@ -148,11 +149,13 @@ model TeamBuilderGame {
   teamB       String
   status      String   @default("pending")
   winner      String?
+  source      String   @default("team_builder") // "team_builder" | "ranked_queue"
   createdAt   DateTime @default(now())
   createdBy   User     @relation(fields: [createdById], references: [id], onDelete: Cascade)
 
   @@index([status])
   @@index([createdAt])
+  @@index([source])
 }
 
 model PlayerGameRating {

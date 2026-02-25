@@ -1,6 +1,14 @@
 ---
-description: Prisma db push — always use local first, then production
+description: Prisma — never run commands yourself; tell user to run so they can double-check
 alwaysApply: true
+---
+
+# Prisma
+
+- **Do not run Prisma commands yourself** (e.g. `prisma migrate dev`, `prisma db push`, `prisma generate`). Instead, tell the user which command to run and why, so they can run and double-check it locally.
+
+- **Do not delete or change the usage of already existing tables.** You may add new tables and add new columns to existing tables. Avoid migrations or schema changes that would drop tables, drop columns, or reset data.
+
 ---
 
 # Prisma database push

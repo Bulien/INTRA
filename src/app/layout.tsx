@@ -7,6 +7,7 @@ import { SessionProvider } from "@/components/SessionProvider";
 import { MainWrapper } from "@/components/MainWrapper";
 import { BottomBar } from "@/components/BottomBar";
 import { LeaveQueueOnUnload } from "@/components/LeaveQueueOnUnload";
+import { OpenDmProvider } from "@/contexts/OpenDmContext";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -47,9 +48,11 @@ export default function RootLayout({
         <SessionProvider>
           <LeaveQueueOnUnload />
           <ThemeProvider>
-            <Navbar />
-            <MainWrapper>{children}</MainWrapper>
-            <BottomBar />
+            <OpenDmProvider>
+              <Navbar />
+              <MainWrapper>{children}</MainWrapper>
+              <BottomBar />
+            </OpenDmProvider>
           </ThemeProvider>
         </SessionProvider>
       </body>
