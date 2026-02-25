@@ -117,6 +117,7 @@ function TeamCard({
 export default function QueueMatchPage() {
   const params = useParams();
   const gameId = typeof params?.gameId === "string" ? params.gameId : "";
+  const { data: session } = useSession();
   const [game, setGame] = useState<GameData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -185,7 +186,6 @@ export default function QueueMatchPage() {
     );
   }
 
-  const { data: session } = useSession();
   const currentUserName = (session?.user?.name ?? session?.user?.email ?? "").trim();
   const isPending = game.status === "pending";
   const gameLabel = GAME_LABELS[game.gameType] ?? game.gameType;
