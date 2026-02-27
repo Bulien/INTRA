@@ -1,0 +1,15 @@
+---
+description: Static assets and images — tell user to put files in public/, never create symlinks/junctions
+alwaysApply: true
+---
+
+# Static assets and images
+
+- **Next.js serves static files only from the `public/` directory.** URLs like `/images/foo.png` resolve to `public/images/foo.png`.
+
+- **Do not create symlinks, junctions, or directory links** to make project-root folders (e.g. `images/`) appear under `public/`. Do not run `mklink`, `ln -s`, or similar.
+
+- **Instead, tell the user** to put their image (or asset) files in **`public/images/`** (or the appropriate subfolder under `public/`), e.g.:
+  - "Put your champion images in `public/images/` so they are served at `/images/`. For example `public/images/Alysia.png` will be available at `/images/Alysia.png`."
+
+- If the user already has files elsewhere (e.g. project root `images/`), instruct them to **copy or move** those files into `public/images/` rather than linking.

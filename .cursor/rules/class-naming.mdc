@@ -1,0 +1,24 @@
+---
+description: Use clear, descriptive CSS class names that match what the element is
+globs: "**/*.css,**/*.tsx,**/*.jsx"
+alwaysApply: false
+---
+
+# Class naming
+
+Use class names that describe **what the element is**, not vague or cute names.
+
+- **Do**: name the element by its role or content (e.g. `draft-screen`, `draft-team-sidebar`, `draft-pick-row`, `draft-champion-button`, `draft-lock-in-button`).
+- **Don’t**: use unclear shorthand or internal jargon (e.g. `draft-champ-btn`, `draft-ban-thumb`, `battlerite-draft-root`).
+
+Use a short, consistent prefix for a feature (e.g. `draft-*` for draft UI). For state modifiers use a clear suffix like `--large` for size variants and `.is-active` / `.is-selected` for state.
+
+**Examples**
+
+| Avoid | Prefer |
+|-------|--------|
+| `battlerite-draft-root` | `draft-screen` |
+| `draft-champ-btn` | `draft-champion-button` |
+| `draft-ban-thumb` | `draft-ban-thumbnail` |
+| `draft-pick-slot` | `draft-pick-row` |
+| `draft-lock-btn` | `draft-lock-in-button` |

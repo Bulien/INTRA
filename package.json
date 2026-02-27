@@ -15,7 +15,8 @@
     "db:pull-from-neon": "dotenv -e .env.neon -- prisma db pull",
     "db:studio": "dotenv -e .env.local -- prisma studio",
     "games:cancel-all": "node scripts/cancel-pending-games.mjs",
-    "set-admin": "node scripts/set-admin.mjs"
+    "set-admin": "node scripts/set-admin.mjs",
+    "simulate-all-accept": "dotenv -e .env.local -- node scripts/simulate-all-accept.mjs"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.7.2",

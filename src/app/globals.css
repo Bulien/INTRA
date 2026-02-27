@@ -1,3 +1,5 @@
+@import url('https://fonts.cdnfonts.com/css/expressway-free');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -46,4 +48,298 @@ body::before {
 body > * {
   position: relative;
   z-index: 1;
+}
+
+/* Draft screen: fullscreen container with blurred background image */
+.draft-screen {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  z-index: 50;
+  font-family: 'Expressway Free', 'Expressway', sans-serif;
+  font-size: 1rem;
+  overflow: hidden;
+  background: linear-gradient(180deg, rgba(12, 18, 34, 0.82) 0%, rgba(15, 23, 42, 0.78) 50%, rgba(12, 18, 34, 0.82) 100%);
+}
+.draft-screen::before {
+  content: "";
+  position: absolute;
+  inset: -24px;
+  background-image: url("/images/background.jpg");
+  background-size: cover;
+  background-position: center;
+  filter: blur(16px);
+  z-index: -1;
+}
+
+/* Team sidebar: picks list + bans */
+.draft-team-sidebar {
+  display: flex;
+  flex-direction: column;
+  border-radius: 0.75rem;
+  overflow: hidden;
+  background: rgba(30, 41, 59, 0.4);
+  backdrop-filter: blur(8px);
+}
+.draft-team-sidebar-inner {
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(100,116,139,0.3) transparent;
+}
+
+/* Pick row */
+.draft-pick-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  transition: background 0.2s, box-shadow 0.3s, border-color 0.3s;
+  border-radius: 0.5rem;
+  padding: 0.25rem;
+  position: relative;
+}
+
+/* Active pick round — cyan glow */
+.draft-pick-row.is-active-pick {
+  background: rgba(103, 232, 249, 0.06);
+  box-shadow: inset 0 0 0 1px rgba(103, 232, 249, 0.35);
+  animation: pickPulse 2.4s ease-in-out infinite;
+}
+@keyframes pickPulse {
+  0%, 100% { box-shadow: inset 0 0 0 1px rgba(103, 232, 249, 0.35); }
+  50%      { box-shadow: inset 0 0 0 1.5px rgba(103, 232, 249, 0.55), 0 0 14px rgba(103, 232, 249, 0.12); }
+}
+
+/* Active ban round — red glow */
+.draft-pick-row.is-active-ban {
+  background: rgba(239, 68, 68, 0.06);
+  box-shadow: inset 0 0 0 1px rgba(239, 68, 68, 0.35);
+  animation: banPulse 2.4s ease-in-out infinite;
+}
+@keyframes banPulse {
+  0%, 100% { box-shadow: inset 0 0 0 1px rgba(239, 68, 68, 0.35); }
+  50%      { box-shadow: inset 0 0 0 1.5px rgba(239, 68, 68, 0.55), 0 0 14px rgba(239, 68, 68, 0.12); }
+}
+
+/* Locked-in — prominent green border + glow */
+.draft-pick-row.is-locked .draft-pick-portrait {
+  border: 2px solid rgba(34, 197, 94, 0.65);
+  box-shadow:
+    0 0 14px rgba(34, 197, 94, 0.45),
+    0 0 32px rgba(34, 197, 94, 0.12),
+    inset 0 0 24px rgba(34, 197, 94, 0.06);
+}
+.draft-locked-badge {
+  position: absolute;
+  bottom: 0.35rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  background: rgba(22, 163, 74, 0.92);
+  color: #fff;
+  padding: 0.175rem 0.6rem 0.175rem 0.45rem;
+  border-radius: 9999px;
+  font-size: 0.6rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(22, 163, 74, 0.5);
+  animation: lockBadgePulse 2s ease-in-out infinite;
+}
+@keyframes lockBadgePulse {
+  0%, 100% { box-shadow: 0 2px 8px rgba(22, 163, 74, 0.5); }
+  50%      { box-shadow: 0 2px 14px rgba(22, 163, 74, 0.8), 0 0 28px rgba(22, 163, 74, 0.2); }
+}
+
+/* Pick portrait */
+.draft-pick-portrait {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 5 / 2;
+  max-height: 140px;
+  border-radius: 0.5rem;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: rgba(51, 65, 85, 0.5);
+  border: 2px solid transparent;
+  transition: border-color 0.3s, box-shadow 0.3s;
+}
+.draft-pick-portrait img {
+  object-fit: cover;
+  object-position: center;
+}
+
+/* Ban thumbnails */
+.draft-ban-thumbnail {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 20 / 9;
+  border-radius: 0.375rem;
+  background: rgba(127, 29, 29, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.draft-ban-thumbnail img {
+  object-fit: cover;
+  object-position: center;
+}
+.draft-ban-round-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: rgb(148, 163, 184);
+  font-family: ui-monospace, "Cascadia Code", "Source Code Pro", Menlo, monospace;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.draft-timer-fill {
+  transition: width 1s linear;
+}
+.draft-ban-thumbnail--active {
+  box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.5), 0 0 16px rgba(239, 68, 68, 0.2);
+}
+
+/* Category labels */
+.draft-category-title {
+  font-size: clamp(0.9rem, 1.4vw, 1.625rem);
+  font-weight: 700;
+  color: rgb(148, 163, 184);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+/* Champion grid — CSS grid for automatic responsive sizing */
+.draft-champion-row {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 0.5rem;
+  width: 100%;
+  flex-shrink: 0;
+}
+
+/* Champion tile */
+.draft-champion-button {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 20 / 9;
+  min-height: 0;
+  border-radius: 0.5rem;
+  overflow: visible;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+  cursor: pointer;
+  padding: 0;
+  background: none;
+  border: 1px solid transparent;
+}
+.draft-champion-button img {
+  object-fit: cover;
+  object-position: center;
+  pointer-events: none;
+}
+
+/* Pick-round hover: cyan */
+.draft-champion-button:hover:not(:disabled):not(.is-banned):not(.is-ban-round) {
+  transform: scale(1.08);
+  box-shadow: 0 0 16px rgba(103, 232, 249, 0.45);
+  border-color: rgba(103, 232, 249, 0.5);
+}
+.draft-champion-button.is-selected:not(.is-ban-round) {
+  box-shadow: 0 0 16px rgba(103, 232, 249, 0.4);
+  border-color: rgba(103, 232, 249, 0.4);
+}
+
+/* Ban-round hover/select: red */
+.draft-champion-button.is-ban-round:hover:not(:disabled):not(.is-banned) {
+  transform: scale(1.08);
+  box-shadow: 0 0 16px rgba(239, 68, 68, 0.45);
+  border-color: rgba(239, 68, 68, 0.5);
+}
+.draft-champion-button.is-ban-round.is-selected {
+  box-shadow: 0 0 16px rgba(239, 68, 68, 0.4);
+  border-color: rgba(239, 68, 68, 0.4);
+}
+
+.draft-champion-button.is-banned {
+  cursor: not-allowed;
+  opacity: 0.85;
+}
+.draft-champion-button.is-banned:disabled {
+  opacity: 0.85;
+}
+.draft-champion-button:disabled:not(.is-banned) {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+/* Action buttons */
+.draft-action-button {
+  padding: 0.65rem 1.75rem;
+  border-radius: 9999px;
+  font-weight: 700;
+  font-size: clamp(0.8rem, 1vw, 1rem);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: inherit;
+  min-width: 10rem;
+}
+.draft-action-button--lock {
+  color: #f1f5f9;
+  background: linear-gradient(135deg, #0891b2, #06b6d4);
+}
+.draft-action-button--lock:hover:not(:disabled) {
+  background: linear-gradient(135deg, #06b6d4, #22d3ee);
+  box-shadow: 0 0 20px rgba(6, 182, 212, 0.4);
+}
+.draft-action-button--ban {
+  color: #fef2f2;
+  background: linear-gradient(135deg, #dc2626, #ef4444);
+}
+.draft-action-button--ban:hover:not(:disabled) {
+  background: linear-gradient(135deg, #ef4444, #f87171);
+  box-shadow: 0 0 20px rgba(239, 68, 68, 0.4);
+}
+.draft-action-button--primary {
+  color: #f0fdf4;
+  background: linear-gradient(135deg, #059669, #10b981);
+}
+.draft-action-button--primary:hover:not(:disabled) {
+  background: linear-gradient(135deg, #10b981, #34d399);
+  box-shadow: 0 0 20px rgba(16, 185, 129, 0.4);
+}
+.draft-action-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ── Responsive ── */
+@media (max-width: 1279px) {
+  .draft-champion-row { gap: 0.375rem; }
+}
+@media (max-width: 1023px) {
+  .draft-champion-row { grid-template-columns: repeat(4, 1fr); gap: 0.35rem; }
+}
+@media (max-width: 767px) {
+  .draft-screen { overflow-y: auto; }
+  .draft-champion-row { grid-template-columns: repeat(3, 1fr); gap: 0.3rem; }
+}
+
+/* Tighter vertical space on ≤ 1080p height */
+@media (max-height: 1080px) {
+  .draft-pick-portrait { max-height: 120px; }
+  .draft-pick-row { gap: 0.2rem; padding: 0.15rem; }
+}
+@media (max-height: 900px) {
+  .draft-pick-portrait { max-height: 95px; }
 }

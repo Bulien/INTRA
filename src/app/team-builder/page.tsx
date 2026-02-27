@@ -1437,6 +1437,13 @@ export default function TeamBuilderPage() {
                         setEditSuggestions([]);
                         return;
                       }
+                      if (e.key === "Enter" && editSuggestions.length > 0 && suggestion) {
+                        e.preventDefault();
+                        handleNameChange(p.id, suggestion);
+                        setEditSuggestions([]);
+                        setEditingPlayerId(null);
+                        return;
+                      }
                       if (e.key === "ArrowDown") {
                         e.preventDefault();
                         if (editSuggestions.length) setEditSuggestionsIndex((i) => (i + 1) % editSuggestions.length);

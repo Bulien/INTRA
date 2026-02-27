@@ -150,6 +150,7 @@ model TeamBuilderGame {
   status      String   @default("pending")
   winner      String?
   source      String   @default("team_builder") // "team_builder" | "ranked_queue"
+  draftState  Json?    // Battlerite draft: round, bans, picks, lock-ins, roundEndsAt
   createdAt   DateTime @default(now())
   createdBy   User     @relation(fields: [createdById], references: [id], onDelete: Cascade)
   resultVotes TeamBuilderResultVote[]

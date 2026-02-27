@@ -7,6 +7,144 @@ import { useSession } from "next-auth/react";
 import { Box, Button, Typography } from "@mui/material";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
+import { BattleriteDraft, type DraftState } from "@/components/BattleriteDraft";
+
+function AcceptScreen({
+  gameId,
+  teamA,
+  teamB,
+  draftState,
+  currentUserId,
+  onUpdate,
+}: {
+  gameId: string;
+  teamA: { id: string; name: string; rating: number }[];
+  teamB: { id: string; name: string; rating: number }[];
+  draftState: DraftState;
+  currentUserId: string;
+  onUpdate: () => void;
+}) {
+  const acceptDeadline = draftState.acceptDeadline ?? "";
+  const acceptedIds = new Set(draftState.acceptedUserIds ?? []);
+  const [secondsLeft, setSecondsLeft] = useState(0);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!acceptDeadline) return;
+    const end = new Date(acceptDeadline).getTime();
+    const tick = () => setSecondsLeft(Math.max(0, Math.ceil((end - Date.now()) / 1000)));
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [acceptDeadline]);
+
+  const handleAccept = async () => {
+    if (!gameId || loading) return;
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/team-builder/games/${gameId}/accept`, { method: "POST" });
+      if (res.ok) onUpdate();
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const allPlayers = [...teamA, ...teamB];
+  const hasAccepted = currentUserId && acceptedIds.has(currentUserId);
+
+  return (
+    <Box sx={{ minHeight: "100vh", py: 4, px: 2, maxWidth: 480, mx: "auto" }}>
+      <Link
+        href="/ranking/rankedqueue"
+        className="inline-flex items-center gap-1 text-sm text-neutral-400 hover:text-cyan-300 font-medium mb-6 no-underline"
+      >
+        <ArrowBackIcon sx={{ fontSize: 18 }} />
+        Back
+      </Link>
+      <Box
+        sx={{
+          borderRadius: 3,
+          overflow: "hidden",
+          bgcolor: "rgba(255,255,255,0.04)",
+          border: "1px solid rgba(103, 232, 249, 0.3)",
+          p: 3,
+        }}
+      >
+        <Typography variant="h6" sx={{ color: "#67e8f9", fontWeight: 700, mb: 1 }}>
+          Match found — Accept game
+        </Typography>
+        <Typography variant="body2" sx={{ color: "rgba(255,255,255,0.6)", mb: 3 }}>
+          Accept before the timer runs out to join the draft. When all 6 players accept, the draft will start.
+        </Typography>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 2, mb: 3 }}>
+          <Typography variant="body2" sx={{ color: "rgba(255,255,255,0.5)" }}>
+            Time left:
+          </Typography>
+          <Typography
+            variant="h5"
+            sx={{
+              fontFamily: "monospace",
+              fontWeight: 700,
+              color: secondsLeft <= 5 ? "#f87171" : "#67e8f9",
+            }}
+          >
+            {String(secondsLeft).padStart(2, "0")}
+          </Typography>
+        </Box>
+        <Typography variant="caption" sx={{ color: "rgba(255,255,255,0.5)", display: "block", mb: 2 }}>
+          {acceptedIds.size} / 6 accepted
+        </Typography>
+        <Box component="ul" sx={{ m: 0, p: 0, listStyle: "none", mb: 3 }}>
+          {allPlayers.map((p) => (
+            <Box
+              key={p.id}
+              component="li"
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                py: 1,
+                px: 0,
+                borderBottom: "1px solid rgba(255,255,255,0.06)",
+              }}
+            >
+              <Typography variant="body2" sx={{ color: "rgba(255,255,255,0.9)" }}>
+                {p.name || "—"}
+              </Typography>
+              {acceptedIds.has(p.id) ? (
+                <CheckCircleIcon sx={{ color: "#22c55e", fontSize: 20 }} />
+              ) : (
+                <Typography variant="caption" sx={{ color: "rgba(255,255,255,0.4)" }}>
+                  Waiting
+                </Typography>
+              )}
+            </Box>
+          ))}
+        </Box>
+        {!hasAccepted && (
+          <Button
+            variant="contained"
+            fullWidth
+            disabled={loading || secondsLeft <= 0}
+            onClick={handleAccept}
+            sx={{
+              bgcolor: "rgba(103, 232, 249, 0.2)",
+              color: "#67e8f9",
+              "&:hover": { bgcolor: "rgba(103, 232, 249, 0.3)" },
+            }}
+          >
+            {loading ? "…" : "Accept"}
+          </Button>
+        )}
+        {hasAccepted && (
+          <Typography variant="body2" sx={{ color: "#67e8f9", textAlign: "center" }}>
+            You accepted. Waiting for other players…
+          </Typography>
+        )}
+      </Box>
+    </Box>
+  );
+}
 
 const GAME_LABELS: Record<string, string> = {
   lol: "League of Legends",
@@ -26,6 +164,8 @@ type GameData = {
   createdAt: string;
   source: string;
   resultVotes?: { votesYin: number; votesYang: number };
+  draftState?: DraftState;
+  cancelledByName?: string;
 };
 
 function TeamCard({
@@ -159,6 +299,29 @@ export default function QueueMatchPage() {
       .catch(() => {});
   }, [gameId]);
 
+  const draftState = game?.draftState as DraftState | undefined;
+  const isBattleriteAccept =
+    game?.gameType === "battlerite" &&
+    game?.source === "ranked_queue" &&
+    draftState?.phase === "accept";
+  const isBattleriteDraft =
+    game?.gameType === "battlerite" &&
+    game?.source === "ranked_queue" &&
+    draftState?.phase === "draft";
+  const handleDraftUpdate = useCallback(
+    (partial?: { draftState: DraftState }) => {
+      if (partial?.draftState) setGame((prev) => (prev ? { ...prev, draftState: partial.draftState } : null));
+      fetchGame();
+    },
+    [fetchGame]
+  );
+
+  useEffect(() => {
+    if (!gameId || (!isBattleriteDraft && !isBattleriteAccept)) return;
+    const interval = setInterval(fetchGame, 2000);
+    return () => clearInterval(interval);
+  }, [isBattleriteDraft, isBattleriteAccept, gameId, fetchGame]);
+
   const handleSubmitResult = async (winner: "yin" | "yang") => {
     if (!gameId || game?.status !== "pending") return;
     setSubmitting(true);
@@ -207,6 +370,64 @@ export default function QueueMatchPage() {
         <Link href="/" className="text-cyan-300 hover:text-cyan-200 font-medium text-sm">
           Back to home
         </Link>
+      </Box>
+    );
+  }
+
+  if (game.status === "cancelled") {
+    const declinedByName = game.cancelledByName ?? "A player";
+    return (
+      <Box sx={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", p: 3 }}>
+        <Box sx={{ textAlign: "center", maxWidth: 400 }}>
+          <Typography variant="h6" sx={{ color: "#f87171", fontWeight: 700, mb: 1 }}>
+            Game cancelled
+          </Typography>
+          <Typography variant="body1" sx={{ color: "rgba(255,255,255,0.9)", mb: 3 }}>
+            <strong>{declinedByName}</strong> declined the game.
+          </Typography>
+          <Link
+            href="/ranking/rankedqueue"
+            className="inline-flex items-center gap-1 text-sm text-cyan-300 hover:text-cyan-200 font-medium no-underline"
+          >
+            <ArrowBackIcon sx={{ fontSize: 18 }} />
+            Back to ranked queue
+          </Link>
+        </Box>
+      </Box>
+    );
+  }
+
+  if (isBattleriteAccept && draftState) {
+    return (
+      <AcceptScreen
+        gameId={game.id}
+        teamA={game.teamA}
+        teamB={game.teamB}
+        draftState={draftState}
+        currentUserId={session?.user?.id ?? ""}
+        onUpdate={fetchGame}
+      />
+    );
+  }
+
+  if (isBattleriteDraft && game.draftState) {
+    return (
+      <Box sx={{ minHeight: "100vh" }}>
+        <Link
+          href="/ranking/rankedqueue"
+          className="inline-flex items-center gap-1 text-sm text-neutral-400 hover:text-cyan-300 font-medium p-4 no-underline"
+        >
+          <ArrowBackIcon sx={{ fontSize: 18 }} />
+          Back
+        </Link>
+        <BattleriteDraft
+          gameId={game.id}
+          teamA={game.teamA}
+          teamB={game.teamB}
+          draftState={game.draftState as DraftState}
+          currentUserId={session?.user?.id ?? ""}
+          onUpdate={handleDraftUpdate}
+        />
       </Box>
     );
   }

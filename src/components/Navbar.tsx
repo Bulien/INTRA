@@ -8,6 +8,7 @@ import { useSession, signOut } from "next-auth/react";
 import SearchIcon from "@mui/icons-material/Search";
 import PersonIcon from "@mui/icons-material/Person";
 import CloseIcon from "@mui/icons-material/Close";
+import MenuIcon from "@mui/icons-material/Menu";
 import SportsEsportsIcon from "@mui/icons-material/SportsEsports";
 
 type SearchUser = { id: string; username: string; name: string };
@@ -36,6 +37,7 @@ type QueueData = {
   gameLabels: Record<string, string>;
 };
 
+type DraftStateAccept = { phase: "accept"; acceptDeadline?: string; acceptedUserIds?: string[] };
 type MatchedGame = {
   id: string;
   gameType: string;
@@ -44,12 +46,196 @@ type MatchedGame = {
   teamB: { id: string; name: string; rating: number }[];
   status: string;
   createdAt: string;
+  draftState?: DraftStateAccept;
 };
 
 type OnlineUser = { id: string; name: string | null; username: string | null };
 
+type OngoingGameNav = { id: string; gameType: string; source: string; teamA: string[]; teamB: string[] };
+
 function isAdmin(session: { user?: { role?: string } | null } | null): boolean {
   return (session?.user as { role?: string } | undefined)?.role === "admin";
+}
+
+function MatchFoundModal({
+  matchedGame,
+  onAcceptAndGo,
+  onDecline,
+}: {
+  matchedGame: MatchedGame;
+  onClose: () => void;
+  onAcceptAndGo: (id: string) => void;
+  onDecline: () => void;
+}) {
+  const isAcceptPhase =
+    matchedGame.gameType === "battlerite" &&
+    (matchedGame.draftState as DraftStateAccept | undefined)?.phase === "accept";
+  const acceptDeadline = (matchedGame.draftState as DraftStateAccept | undefined)?.acceptDeadline;
+  const acceptedCount = (matchedGame.draftState as DraftStateAccept | undefined)?.acceptedUserIds?.length ?? 0;
+  const [acceptSecondsLeft, setAcceptSecondsLeft] = useState(0);
+  const [acceptLoading, setAcceptLoading] = useState(false);
+  const [declineLoading, setDeclineLoading] = useState(false);
+  const [declinedByName, setDeclinedByName] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isAcceptPhase || !acceptDeadline) return;
+    const end = new Date(acceptDeadline).getTime();
+    const tick = () => setAcceptSecondsLeft(Math.max(0, Math.ceil((end - Date.now()) / 1000)));
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [isAcceptPhase, acceptDeadline]);
+
+  useEffect(() => {
+    if (!isAcceptPhase || !matchedGame.id) return;
+    const checkCancelled = async () => {
+      const res = await fetch(`/api/team-builder/games/${matchedGame.id}`, { cache: "no-store" });
+      const data = await res.json().catch(() => ({}));
+      if (data?.status === "cancelled" && data?.cancelledByName) {
+        setDeclinedByName(data.cancelledByName);
+      }
+    };
+    checkCancelled();
+    const interval = setInterval(checkCancelled, 2000);
+    return () => clearInterval(interval);
+  }, [isAcceptPhase, matchedGame.id]);
+
+  const handleAccept = async () => {
+    if (!matchedGame.id || acceptLoading) return;
+    setAcceptLoading(true);
+    try {
+      const res = await fetch(`/api/team-builder/games/${matchedGame.id}/accept`, { method: "POST" });
+      if (res.ok) onAcceptAndGo(matchedGame.id);
+    } finally {
+      setAcceptLoading(false);
+    }
+  };
+
+  const handleDecline = async () => {
+    if (!matchedGame.id || declineLoading) return;
+    setDeclineLoading(true);
+    try {
+      const res = await fetch(`/api/team-builder/games/${matchedGame.id}/cancel`, { method: "POST" });
+      if (res.ok) onDecline();
+    } finally {
+      setDeclineLoading(false);
+    }
+  };
+
+  const handleOverlayClick = () => {
+    if (!isAcceptPhase && matchedGame.id) {
+      onAcceptAndGo(matchedGame.id);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-[200] bg-black/60 backdrop-blur-md flex items-center justify-center p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="matched-game-title"
+      onClick={handleOverlayClick}
+      style={{ cursor: isAcceptPhase ? "default" : "pointer" }}
+    >
+      <div
+        className="w-full max-w-lg bg-neutral-900 border border-cyan-500/40 rounded-xl shadow-2xl overflow-hidden pointer-events-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="p-4 border-b border-white/10">
+          <h2 id="matched-game-title" className="text-lg font-bold text-cyan-200 flex items-center gap-2">
+            <SportsEsportsIcon sx={{ color: "#67e8f9" }} />
+            {declinedByName ? "Game cancelled" : `Match found — ${QUEUE_GAMES.find((g) => g.id === matchedGame.gameType)?.label ?? matchedGame.gameType}`}
+          </h2>
+          <p className="text-sm text-neutral-400 mt-1">
+            {declinedByName
+              ? `${declinedByName} declined the game.`
+              : isAcceptPhase
+                ? "Accept to join the draft. If you decline, the match is cancelled for everyone."
+                : "Your team is ready. Click anywhere to post the result after the game."}
+          </p>
+        </div>
+        <div className="grid grid-cols-2 gap-4 p-4">
+          <div className="rounded-lg p-3 bg-cyan-500/10 border border-cyan-500/30">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-semibold text-cyan-300 uppercase tracking-wider">Team Yin</span>
+              <span className="text-sm font-semibold text-cyan-200 tabular-nums">
+                {matchedGame.teamA.reduce((s, p) => s + (p.rating ?? 0), 0)} ELO
+              </span>
+            </div>
+            <ul className="space-y-1 text-sm text-neutral-200">
+              {matchedGame.teamA.map((p) => (
+                <li key={p.id} className="flex justify-between">
+                  <span className="truncate">{p.name || "—"}</span>
+                  <span className="text-cyan-300 font-mono ml-2">{p.rating ?? "—"}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div className="rounded-lg p-3 bg-pink-500/10 border border-pink-500/30">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-semibold text-pink-300 uppercase tracking-wider">Team Yang</span>
+              <span className="text-sm font-semibold text-pink-200 tabular-nums">
+                {matchedGame.teamB.reduce((s, p) => s + (p.rating ?? 0), 0)} ELO
+              </span>
+            </div>
+            <ul className="space-y-1 text-sm text-neutral-200">
+              {matchedGame.teamB.map((p) => (
+                <li key={p.id} className="flex justify-between">
+                  <span className="truncate">{p.name || "—"}</span>
+                  <span className="text-pink-300 font-mono ml-2">{p.rating ?? "—"}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+        {declinedByName ? (
+          <div className="p-4 border-t border-white/10">
+            <button
+              type="button"
+              onClick={onDecline}
+              className="w-full py-2.5 rounded-lg bg-slate-600/40 text-slate-200 font-semibold hover:bg-slate-600/60"
+            >
+              Close
+            </button>
+          </div>
+        ) : isAcceptPhase ? (
+          <div className="p-4 border-t border-white/10 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-slate-400">Time to accept</span>
+              <span className={`text-2xl font-bold tabular-nums ${acceptSecondsLeft <= 5 ? "text-red-400" : "text-cyan-400"}`}>
+                {String(acceptSecondsLeft).padStart(2, "0")}
+              </span>
+            </div>
+            <p className="text-xs text-slate-500">{acceptedCount} / 6 players accepted</p>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={handleAccept}
+                disabled={acceptLoading || acceptSecondsLeft <= 0}
+                className="flex-1 py-2.5 rounded-lg bg-cyan-500/20 text-cyan-200 font-semibold hover:bg-cyan-500/30 disabled:opacity-50 disabled:pointer-events-none"
+              >
+                {acceptLoading ? "…" : "Accept"}
+              </button>
+              <button
+                type="button"
+                onClick={handleDecline}
+                disabled={declineLoading}
+                className="flex-1 py-2.5 rounded-lg bg-red-500/20 text-red-300 font-semibold hover:bg-red-500/30 disabled:opacity-50"
+              >
+                {declineLoading ? "…" : "Decline"}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="p-4 border-t border-white/10">
+            <div className="py-2.5 rounded-lg text-center text-sm font-medium text-cyan-200">
+              Click anywhere → Post results
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 export function Navbar() {
@@ -57,17 +243,22 @@ export function Navbar() {
   const router = useRouter();
   const { data: session, status } = useSession();
   const [searchOpen, setSearchOpen] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchUser[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [completionIndex, setCompletionIndex] = useState(0);
   const [activeGamesCount, setActiveGamesCount] = useState(0);
+  const [teamBuilderGamesCount, setTeamBuilderGamesCount] = useState(0);
+  const [ongoingGames, setOngoingGames] = useState<OngoingGameNav[]>([]);
   const [playModalOpen, setPlayModalOpen] = useState(false);
   const [queueData, setQueueData] = useState<QueueData | null>(null);
   const [queueTimerSeconds, setQueueTimerSeconds] = useState(0);
   const [onlineUsers, setOnlineUsers] = useState<OnlineUser[]>([]);
   const [onlineHovering, setOnlineHovering] = useState(false);
   const [onlinePinned, setOnlinePinned] = useState(false);
+  const [ongoingHovering, setOngoingHovering] = useState(false);
+  const [ongoingPinned, setOngoingPinned] = useState(false);
   const [queueHovering, setQueueHovering] = useState(false);
   const [queuePinned, setQueuePinned] = useState(false);
   const [matchedGameFromQueue, setMatchedGameFromQueue] = useState<MatchedGame | null>(null);
@@ -75,18 +266,27 @@ export function Navbar() {
   const previousPendingGameIdsRef = useRef<Set<string>>(new Set());
   const navInitializedRef = useRef(false);
   const onlineMenuOpen = onlineHovering || onlinePinned;
+  const ongoingMenuOpen = ongoingHovering || ongoingPinned;
   const queueMenuOpen = queueHovering || queuePinned;
   const searchInputRef = useRef<HTMLInputElement>(null);
   const searchContainerRef = useRef<HTMLDivElement>(null);
   const queueMenuRef = useRef<HTMLDivElement>(null);
   const onlineMenuRef = useRef<HTMLDivElement>(null);
+  const ongoingMenuRef = useRef<HTMLDivElement>(null);
   const onlineCloseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const ongoingCloseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const queueCloseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const clearOnlineCloseTimeout = () => {
     if (onlineCloseTimeoutRef.current != null) {
       clearTimeout(onlineCloseTimeoutRef.current);
       onlineCloseTimeoutRef.current = null;
+    }
+  };
+  const clearOngoingCloseTimeout = () => {
+    if (ongoingCloseTimeoutRef.current != null) {
+      clearTimeout(ongoingCloseTimeoutRef.current);
+      ongoingCloseTimeoutRef.current = null;
     }
   };
   const clearQueueCloseTimeout = () => {
@@ -101,14 +301,25 @@ export function Navbar() {
     if (!res.ok) return;
     const data = await res.json();
     const pendingGameIds = (data.pendingGameIds ?? []) as string[];
+    const ongoingGames = (data.ongoingGames ?? []) as OngoingGameNav[];
     setActiveGamesCount(data.pendingGamesCount ?? 0);
+    setTeamBuilderGamesCount(data.pendingTeamBuilderCount ?? 0);
+    setOngoingGames(ongoingGames);
     setOngoingQueueMatchId(data.ongoingQueueMatchId ?? null);
     setOnlineUsers(data.online ?? []);
 
     const prevIds = previousPendingGameIdsRef.current;
-    const hasNewGame = pendingGameIds.some((id) => !prevIds.has(id));
+    const newGameIds = pendingGameIds.filter((id) => !prevIds.has(id));
+    const hasNewGame = newGameIds.length > 0;
     if (navInitializedRef.current && hasNewGame && pendingGameIds.length > 0) {
-      router.push("/team-builder");
+      const newQueueMatchId = newGameIds.find(
+        (id) => ongoingGames.find((g) => g.id === id)?.source === "ranked_queue"
+      );
+      if (newQueueMatchId) {
+        router.push(`/queue-match/${newQueueMatchId}`);
+      } else {
+        router.push("/team-builder");
+      }
     }
     navInitializedRef.current = true;
     previousPendingGameIdsRef.current = new Set(pendingGameIds);
@@ -117,6 +328,8 @@ export function Navbar() {
   useEffect(() => {
     if (status !== "authenticated" || !session?.user) {
       setActiveGamesCount(0);
+      setTeamBuilderGamesCount(0);
+      setOngoingGames([]);
       setOngoingQueueMatchId(null);
       setOnlineUsers([]);
       return;
@@ -169,11 +382,13 @@ export function Navbar() {
     const handleClickOutside = (e: MouseEvent) => {
       if (queueMenuRef.current && !queueMenuRef.current.contains(e.target as Node)) setQueuePinned(false);
       if (onlineMenuRef.current && !onlineMenuRef.current.contains(e.target as Node)) setOnlinePinned(false);
+      if (ongoingMenuRef.current && !ongoingMenuRef.current.contains(e.target as Node)) setOngoingPinned(false);
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
       clearOnlineCloseTimeout();
+      clearOngoingCloseTimeout();
       clearQueueCloseTimeout();
     };
   }, []);
@@ -203,6 +418,10 @@ export function Navbar() {
     const sec = s % 60;
     return `${m}:${sec.toString().padStart(2, "0")}`;
   };
+
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [pathname]);
 
   useEffect(() => {
     if (searchOpen) {
@@ -305,69 +524,162 @@ export function Navbar() {
   return (
     <nav className="border-b border-cyan-500/20 bg-black/80 backdrop-blur-sm sticky top-0 z-50">
       {session && (
-        <div
-          className="fixed top-0 left-0 z-[60] flex items-center pl-4 border-b border-cyan-500/20 bg-black/80 backdrop-blur-sm pr-6 h-14"
-          ref={onlineMenuRef}
-          onMouseEnter={() => { clearOnlineCloseTimeout(); setOnlineHovering(true); }}
-          onMouseLeave={() => { clearOnlineCloseTimeout(); onlineCloseTimeoutRef.current = setTimeout(() => setOnlineHovering(false), 200); }}
-        >
-          <button
-            type="button"
-            onClick={() => setOnlinePinned((o) => !o)}
-            className={`flex items-center gap-2 px-2.5 py-1.5 rounded-md text-sm font-medium transition-colors text-neutral-400 hover:text-cyan-200 hover:bg-cyan-500/10 border border-white/10 ${
-              onlineMenuOpen ? "shadow-[0_0_12px_rgba(103,232,249,0.4)]" : ""
-            }`}
+        <div className="hidden lg:flex fixed top-0 left-0 z-[60] items-center gap-3 pl-4 border-b border-cyan-500/20 bg-black/80 backdrop-blur-sm pr-6 h-14">
+          <div
+            ref={onlineMenuRef}
+            className="relative"
+            onMouseEnter={() => { clearOnlineCloseTimeout(); setOnlineHovering(true); }}
+            onMouseLeave={() => { clearOnlineCloseTimeout(); onlineCloseTimeoutRef.current = setTimeout(() => setOnlineHovering(false), 200); }}
           >
-            <span className="font-medium">Online</span>
-            {onlineUsers.length > 0 ? (
-              <span className="flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-cyan-500/30 px-1.5 text-xs font-bold text-cyan-200">
-                {onlineUsers.length > 99 ? "99+" : onlineUsers.length}
-              </span>
-            ) : null}
-          </button>
-          {onlineMenuOpen && (
-            <div
-              className="absolute top-full left-4 mt-1 w-56 max-h-80 overflow-auto rounded-lg border border-cyan-500/30 bg-black/95 shadow-xl z-[100]"
-              onMouseEnter={() => { clearOnlineCloseTimeout(); setOnlineHovering(true); }}
-              onMouseLeave={() => { clearOnlineCloseTimeout(); onlineCloseTimeoutRef.current = setTimeout(() => setOnlineHovering(false), 200); }}
+            <button
+              type="button"
+              onClick={() => setOnlinePinned((o) => !o)}
+              className={`flex items-center gap-2 px-2.5 py-1.5 rounded-md text-sm font-medium transition-colors text-neutral-400 hover:text-cyan-200 hover:bg-cyan-500/10 border border-white/10 ${
+                onlineMenuOpen ? "shadow-[0_0_12px_rgba(103,232,249,0.4)]" : ""
+              }`}
             >
-              <div className="p-2 border-b border-white/10">
-                <span className="text-sm font-semibold text-cyan-200">Online now</span>
+              <span className="font-medium">Online</span>
+              {onlineUsers.length > 0 ? (
+                <span className="flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-cyan-500/30 px-1.5 text-xs font-bold text-cyan-200">
+                  {onlineUsers.length > 99 ? "99+" : onlineUsers.length}
+                </span>
+              ) : null}
+            </button>
+            {onlineMenuOpen && (
+              <div
+                className="absolute top-full left-4 mt-1 w-56 max-h-80 overflow-auto rounded-lg border border-cyan-500/30 bg-black/95 shadow-xl z-[100]"
+                onMouseEnter={() => { clearOnlineCloseTimeout(); setOnlineHovering(true); }}
+                onMouseLeave={() => { clearOnlineCloseTimeout(); onlineCloseTimeoutRef.current = setTimeout(() => setOnlineHovering(false), 200); }}
+              >
+                <div className="p-2 border-b border-white/10">
+                  <span className="text-sm font-semibold text-cyan-200">Online now</span>
+                </div>
+                <ul className="p-2 space-y-0.5">
+                  {onlineUsers.length === 0 ? (
+                    <li className="text-sm text-neutral-500 py-2 text-center">No one online</li>
+                  ) : (
+                    onlineUsers.map((u) => {
+                      const isYou = session?.user?.id === u.id;
+                      const displayName = u.name ?? u.username ?? "—";
+                      return (
+                        <li key={u.id} className="flex items-center">
+                          <span className={`inline-block rounded py-0.5 px-1.5 text-sm truncate min-w-0 flex-1 ${isYou ? "border border-amber-400/50 shadow-[inset_0_0_12px_rgba(251,191,36,0.2)]" : "border border-transparent"}`}>
+                            <Link
+                              href={`/profile/${encodeURIComponent((u.username ?? u.name ?? "").trim() || "?")}`}
+                              className="block text-neutral-200 hover:text-cyan-200 transition-colors truncate"
+                              onClick={() => setOnlinePinned(false)}
+                            >
+                              {displayName}
+                            </Link>
+                          </span>
+                        </li>
+                      );
+                    })
+                  )}
+                </ul>
               </div>
-              <ul className="p-2 space-y-0.5">
-                {onlineUsers.length === 0 ? (
-                  <li className="text-sm text-neutral-500 py-2 text-center">No one online</li>
-                ) : (
-                  onlineUsers.map((u) => {
-                    const isYou = session?.user?.id === u.id;
-                    const displayName = u.name ?? u.username ?? "—";
-                    return (
-                      <li key={u.id} className="flex items-center">
-                        <span className={`inline-block rounded py-0.5 px-1.5 text-sm truncate min-w-0 flex-1 ${isYou ? "border border-amber-400/50 shadow-[inset_0_0_12px_rgba(251,191,36,0.2)]" : "border border-transparent"}`}>
+            )}
+          </div>
+          <div
+            ref={ongoingMenuRef}
+            className="relative"
+            onMouseEnter={() => { clearOngoingCloseTimeout(); setOngoingHovering(true); }}
+            onMouseLeave={() => { clearOngoingCloseTimeout(); ongoingCloseTimeoutRef.current = setTimeout(() => setOngoingHovering(false), 200); }}
+          >
+            <button
+              type="button"
+              onClick={() => setOngoingPinned((o) => !o)}
+              className={`flex items-center gap-2 px-2.5 py-1.5 rounded-md text-sm font-medium transition-colors text-neutral-400 hover:text-cyan-200 hover:bg-cyan-500/10 border border-white/10 ${
+                ongoingMenuOpen ? "shadow-[0_0_12px_rgba(103,232,249,0.4)]" : ""
+              }`}
+            >
+              <span className="font-medium">Ongoing games</span>
+              {ongoingGames.length > 0 ? (
+                <span className="flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-cyan-500/30 px-1.5 text-xs font-bold text-cyan-200">
+                  {ongoingGames.length > 99 ? "99+" : ongoingGames.length}
+                </span>
+              ) : null}
+            </button>
+            {ongoingMenuOpen && (
+              <div
+                className="absolute top-full left-4 mt-1 w-72 max-h-[70vh] overflow-auto rounded-lg border border-cyan-500/30 bg-black/95 shadow-xl z-[100]"
+                onMouseEnter={() => { clearOngoingCloseTimeout(); setOngoingHovering(true); }}
+                onMouseLeave={() => { clearOngoingCloseTimeout(); ongoingCloseTimeoutRef.current = setTimeout(() => setOngoingHovering(false), 200); }}
+              >
+                <div className="p-2 border-b border-white/10">
+                  <span className="text-sm font-semibold text-cyan-200">Ongoing games</span>
+                </div>
+                <div className="p-2 space-y-3">
+                  {ongoingGames.length === 0 ? (
+                    <p className="text-sm text-neutral-500 py-2">No games in progress.</p>
+                  ) : (
+                    ongoingGames.map((game, index) => {
+                      const gameLabel = QUEUE_GAMES.find((g) => g.id === game.gameType)?.label ?? game.gameType;
+                      const href = game.source === "ranked_queue" ? `/queue-match/${game.id}` : "/team-builder";
+                      return (
+                        <div key={game.id} className="rounded border border-white/10 bg-white/5 p-2 text-sm">
                           <Link
-                            href={`/profile/${encodeURIComponent((u.username ?? u.name ?? "").trim() || "?")}`}
-                            className="block text-neutral-200 hover:text-cyan-200 transition-colors truncate"
-                            onClick={() => setOnlinePinned(false)}
+                            href={href}
+                            className="font-semibold text-cyan-200 hover:text-cyan-100 block mb-1.5"
+                            onClick={() => setOngoingPinned(false)}
                           >
-                            {displayName}
+                            Game {index + 1}: {gameLabel}
                           </Link>
-                        </span>
-                      </li>
-                    );
-                  })
-                )}
-              </ul>
-            </div>
-          )}
+                          <div className="space-y-1 text-neutral-300">
+                            <div>
+                              <span className="text-neutral-500 text-xs">Team A: </span>
+                              {game.teamA.join(", ") || "—"}
+                            </div>
+                            <div>
+                              <span className="text-neutral-500 text-xs">Team B: </span>
+                              {game.teamB.join(", ") || "—"}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                  <div className="pt-1 border-t border-white/10 flex flex-col gap-1">
+                    <Link
+                      href="/team-builder"
+                      className="text-sm font-medium text-cyan-300 hover:text-cyan-200 transition-colors"
+                      onClick={() => setOngoingPinned(false)}
+                    >
+                      Go to Team Builder →
+                    </Link>
+                    <button
+                      type="button"
+                      className="text-sm font-medium text-cyan-300 hover:text-cyan-200 transition-colors text-left"
+                      onClick={() => {
+                        setOngoingPinned(false);
+                        setPlayModalOpen(true);
+                      }}
+                    >
+                      Go to queue →
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       )}
       {session && (
         <div
-          className="fixed top-0 right-0 z-[60] flex items-center gap-3 pr-4 border-b border-cyan-500/20 bg-black/80 backdrop-blur-sm pl-4 h-14"
+          className="hidden lg:flex fixed top-0 right-0 z-[60] items-center gap-3 pr-4 border-b border-cyan-500/20 bg-black/80 backdrop-blur-sm pl-4 h-14"
           ref={queueMenuRef}
           onMouseEnter={() => { clearQueueCloseTimeout(); setQueueHovering(true); }}
           onMouseLeave={() => { clearQueueCloseTimeout(); queueCloseTimeoutRef.current = setTimeout(() => setQueueHovering(false), 200); }}
         >
+          {ongoingQueueMatchId && (
+            <button
+              type="button"
+              onClick={() => router.push(`/queue-match/${ongoingQueueMatchId}`)}
+              className="px-3 py-2 rounded-md text-sm font-semibold transition-colors bg-red-500/20 text-red-300 border border-red-400/50 hover:bg-red-500/30 shadow-[0_0_14px_rgba(239,68,68,0.4)] hover:shadow-[0_0_20px_rgba(239,68,68,0.5)]"
+            >
+              Ongoing game
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setPlayModalOpen(true)}
@@ -484,7 +796,8 @@ export function Navbar() {
             </Link>
           </div>
 
-          <div className="flex items-center gap-1">
+          {/* Desktop nav links + search + auth */}
+          <div className="hidden lg:flex items-center gap-1">
             {isAdmin(session) && (
               <Link
                 href="/admin"
@@ -497,21 +810,12 @@ export function Navbar() {
                 Admin
               </Link>
             )}
-            {ongoingQueueMatchId && (
-              <button
-                type="button"
-                onClick={() => router.push(`/queue-match/${ongoingQueueMatchId}`)}
-                className="px-3 py-2 rounded-md text-sm font-semibold transition-colors bg-red-500/20 text-red-300 border border-red-400/50 hover:bg-red-500/30 shadow-[0_0_14px_rgba(239,68,68,0.4)] hover:shadow-[0_0_20px_rgba(239,68,68,0.5)]"
-              >
-                Ongoing game
-              </button>
-            )}
             {navLinks.map((link) => {
               const isActive =
                 link.href === "/"
                   ? pathname === "/"
                   : pathname?.startsWith(link.href);
-              const showGameBadge = link.href === "/team-builder" && activeGamesCount > 0;
+              const showGameBadge = link.href === "/team-builder" && teamBuilderGamesCount > 0;
               return (
                 <Link
                   key={link.href}
@@ -526,9 +830,9 @@ export function Navbar() {
                   {showGameBadge && (
                     <span
                       className="absolute -top-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-cyan-400 text-[10px] font-bold text-black"
-                      aria-label={`${activeGamesCount} game(s) in progress`}
+                      aria-label={`${teamBuilderGamesCount} team builder game(s) in progress`}
                     >
-                      {activeGamesCount > 9 ? "9+" : activeGamesCount}
+                      {teamBuilderGamesCount > 9 ? "9+" : teamBuilderGamesCount}
                     </span>
                   )}
                 </Link>
@@ -541,7 +845,6 @@ export function Navbar() {
                   <div className="relative flex items-center rounded-md bg-white/10 border border-cyan-500/30 focus-within:border-cyan-400 focus-within:ring-1 focus-within:ring-cyan-400/50 w-56 flex-none overflow-hidden">
                     <SearchIcon className="absolute left-2.5 w-4 h-4 text-neutral-500 pointer-events-none shrink-0 z-10" />
                     <div className="relative flex-1 flex items-center h-9 pl-8 pr-8">
-                      {/* Inline completion: typed text + suffix in gray, behind input; placeholder when empty */}
                       <div
                         className="absolute inset-0 flex items-center pl-8 pr-8 pointer-events-none text-sm overflow-hidden"
                         aria-hidden
@@ -652,8 +955,145 @@ export function Navbar() {
               )}
             </div>
           </div>
+
+          {/* Mobile controls */}
+          <div className="flex lg:hidden items-center gap-2">
+            {session && (
+              <button
+                type="button"
+                onClick={() => { setMobileMenuOpen(false); setPlayModalOpen(true); }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-bold text-orange-200 bg-orange-950/90 hover:bg-orange-900 border border-orange-500/70 shadow-[0_0_14px_rgba(234,88,12,0.4)] transition-all"
+                aria-label="Join queue to play"
+              >
+                <SportsEsportsIcon sx={{ fontSize: 20 }} />
+                Play
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setMobileMenuOpen((v) => !v)}
+              className="p-2 rounded-md text-neutral-400 hover:text-white hover:bg-white/10 transition-colors"
+              aria-label="Toggle menu"
+            >
+              {mobileMenuOpen ? <CloseIcon /> : <MenuIcon />}
+            </button>
+          </div>
         </div>
       </div>
+
+      {/* Mobile menu */}
+      {mobileMenuOpen && (
+        <div className="lg:hidden border-t border-cyan-500/20 bg-black/95 backdrop-blur-lg max-h-[calc(100vh-3.5rem)] overflow-y-auto">
+          <div className="p-3 space-y-0.5">
+            {isAdmin(session) && (
+              <Link
+                href="/admin"
+                onClick={() => setMobileMenuOpen(false)}
+                className={`block px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                  pathname?.startsWith("/admin") ? "bg-cyan-500/20 text-cyan-300" : "text-neutral-300 hover:text-cyan-200 hover:bg-cyan-500/10"
+                }`}
+              >
+                Admin
+              </Link>
+            )}
+            {navLinks.map((link) => {
+              const isActive = link.href === "/" ? pathname === "/" : pathname?.startsWith(link.href);
+              return (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  onClick={() => setMobileMenuOpen(false)}
+                  className={`block px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                    isActive ? "bg-cyan-500/20 text-cyan-300" : "text-neutral-300 hover:text-cyan-200 hover:bg-cyan-500/10"
+                  }`}
+                >
+                  {link.label}
+                  {link.href === "/team-builder" && teamBuilderGamesCount > 0 && (
+                    <span className="ml-2 inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-cyan-400 px-1.5 text-[10px] font-bold text-black">
+                      {teamBuilderGamesCount > 9 ? "9+" : teamBuilderGamesCount}
+                    </span>
+                  )}
+                </Link>
+              );
+            })}
+            <button
+              type="button"
+              onClick={() => { setMobileMenuOpen(false); setSearchOpen(true); }}
+              className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium text-neutral-400 hover:text-cyan-200 hover:bg-cyan-500/10 transition-colors"
+            >
+              <SearchIcon sx={{ fontSize: 18 }} />
+              Search
+            </button>
+
+            {session && (
+              <>
+                <div className="border-t border-white/10 pt-2 mt-2 space-y-0.5">
+                  <div className="flex items-center justify-between px-3 py-2 rounded-lg text-sm text-neutral-400">
+                    <span className="font-medium">Online</span>
+                    <span className="text-cyan-300 font-semibold">{onlineUsers.length}</span>
+                  </div>
+                  <div className="flex items-center justify-between px-3 py-2 rounded-lg text-sm text-neutral-400">
+                    <span className="font-medium">Ongoing games</span>
+                    <span className="text-cyan-300 font-semibold">{ongoingGames.length}</span>
+                  </div>
+                  {ongoingQueueMatchId && (
+                    <Link
+                      href={`/queue-match/${ongoingQueueMatchId}`}
+                      onClick={() => setMobileMenuOpen(false)}
+                      className="block px-3 py-2.5 rounded-lg text-sm font-semibold bg-red-500/15 text-red-300 border border-red-400/40 hover:bg-red-500/25 transition-colors"
+                    >
+                      Go to ongoing game
+                    </Link>
+                  )}
+                  {queueData?.myEntry ? (
+                    <div className="flex items-center justify-between px-3 py-2.5 rounded-lg text-sm bg-red-500/10 border border-red-400/30">
+                      <span className="text-red-300 font-medium">In queue · {queueData.myEntry.label}</span>
+                      <div className="flex items-center gap-3">
+                        <span className="tabular-nums font-mono text-red-200 text-xs">{formatTimer(queueTimerSeconds)}</span>
+                        <button type="button" onClick={handleLeaveQueue} className="text-xs text-neutral-400 hover:text-red-300 transition-colors">Leave</button>
+                      </div>
+                    </div>
+                  ) : queueData ? (
+                    <div className="flex items-center justify-between px-3 py-2 rounded-lg text-sm text-neutral-400">
+                      <span className="font-medium">Queue</span>
+                      <span className="text-cyan-300 font-semibold">
+                        {(["lol", "ow", "sc", "battlerite"] as const).reduce((s, g) => s + (queueData.playersByGame[g]?.length ?? 0), 0)} players
+                      </span>
+                    </div>
+                  ) : null}
+                </div>
+
+                <div className="border-t border-white/10 pt-2 mt-2 space-y-0.5">
+                  <Link
+                    href="/profile"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium text-cyan-200 hover:bg-cyan-500/10 transition-colors"
+                  >
+                    <PersonIcon sx={{ fontSize: 18 }} />
+                    {session.user?.name ?? "Profile"}
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => { signOut({ callbackUrl: "/" }); setMobileMenuOpen(false); }}
+                    className="w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium text-neutral-400 hover:text-pink-200 hover:bg-pink-500/10 transition-colors"
+                  >
+                    Log out
+                  </button>
+                </div>
+              </>
+            )}
+            {!session && status !== "loading" && (
+              <Link
+                href="/login"
+                onClick={() => setMobileMenuOpen(false)}
+                className="block px-3 py-2.5 rounded-lg text-sm font-medium text-neutral-400 hover:text-pink-200 hover:bg-pink-500/10 transition-colors"
+              >
+                Login
+              </Link>
+            )}
+          </div>
+        </div>
+      )}
 
       {playModalOpen &&
         typeof document !== "undefined" &&
@@ -701,67 +1141,17 @@ export function Navbar() {
 
       {matchedGameFromQueue && typeof document !== "undefined" &&
         createPortal(
-          <div
-            className="fixed inset-0 z-[200] bg-black/60 backdrop-blur-md flex items-center justify-center p-4 cursor-pointer"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="matched-game-title"
-            onClick={() => {
-              if (matchedGameFromQueue?.id) {
-                router.push(`/queue-match/${matchedGameFromQueue.id}`);
-                setMatchedGameFromQueue(null);
-              }
+          <MatchFoundModal
+            matchedGame={matchedGameFromQueue}
+            onClose={() => {
+              setMatchedGameFromQueue(null);
             }}
-          >
-            <div className="w-full max-w-lg bg-neutral-900 border border-cyan-500/40 rounded-xl shadow-2xl overflow-hidden pointer-events-none">
-              <div className="p-4 border-b border-white/10">
-                <h2 id="matched-game-title" className="text-lg font-bold text-cyan-200 flex items-center gap-2">
-                  <SportsEsportsIcon sx={{ color: "#67e8f9" }} />
-                  Match found — {QUEUE_GAMES.find((g) => g.id === matchedGameFromQueue.gameType)?.label ?? matchedGameFromQueue.gameType}
-                </h2>
-                <p className="text-sm text-neutral-400 mt-1">Your team is ready. Click anywhere to post the result after the game.</p>
-              </div>
-              <div className="grid grid-cols-2 gap-4 p-4">
-                <div className="rounded-lg p-3 bg-cyan-500/10 border border-cyan-500/30">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-semibold text-cyan-300 uppercase tracking-wider">Team Yin</span>
-                    <span className="text-sm font-semibold text-cyan-200 tabular-nums">
-                      {matchedGameFromQueue.teamA.reduce((s, p) => s + (p.rating ?? 0), 0)} ELO
-                    </span>
-                  </div>
-                  <ul className="space-y-1 text-sm text-neutral-200">
-                    {matchedGameFromQueue.teamA.map((p) => (
-                      <li key={p.id} className="flex justify-between">
-                        <span className="truncate">{p.name || "—"}</span>
-                        <span className="text-cyan-300 font-mono ml-2">{p.rating ?? "—"}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-                <div className="rounded-lg p-3 bg-pink-500/10 border border-pink-500/30">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-semibold text-pink-300 uppercase tracking-wider">Team Yang</span>
-                    <span className="text-sm font-semibold text-pink-200 tabular-nums">
-                      {matchedGameFromQueue.teamB.reduce((s, p) => s + (p.rating ?? 0), 0)} ELO
-                    </span>
-                  </div>
-                  <ul className="space-y-1 text-sm text-neutral-200">
-                    {matchedGameFromQueue.teamB.map((p) => (
-                      <li key={p.id} className="flex justify-between">
-                        <span className="truncate">{p.name || "—"}</span>
-                        <span className="text-pink-300 font-mono ml-2">{p.rating ?? "—"}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-              <div className="p-4 border-t border-white/10">
-                <div className="py-2.5 rounded-lg text-center text-sm font-medium text-cyan-200">
-                  Click anywhere → Post results
-                </div>
-              </div>
-            </div>
-          </div>,
+            onAcceptAndGo={(id) => {
+              setMatchedGameFromQueue(null);
+              router.push(`/queue-match/${id}`);
+            }}
+            onDecline={() => setMatchedGameFromQueue(null)}
+          />,
           document.body
         )}
 

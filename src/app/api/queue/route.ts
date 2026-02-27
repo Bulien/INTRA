@@ -18,6 +18,9 @@ const GAME_LABELS: Record<string, string> = {
   battlerite: "Battlerite",
 };
 
+/** Same as api/online: users with lastSeenAt within this window are "online". */
+const ONLINE_WINDOW_MS = 5 * 60 * 1000;
+
 export type QueuedPlayer = {
   id: string;
   name: string | null;
@@ -62,6 +65,26 @@ async function tryCreateQueueMatch(
   const teamAPayload = teamA.map((p) => ({ id: p.userId, name: p.displayName, rating: p.elo }));
   const teamBPayload = teamB.map((p) => ({ id: p.userId, name: p.displayName, rating: p.elo }));
 
+  const now = new Date();
+  const acceptDeadline = new Date(now.getTime() + 30 * 1000);
+  const initialDraftState =
+    gameType === "battlerite"
+      ? {
+          phase: "accept" as const,
+          round: 1,
+          acceptDeadline: acceptDeadline.toISOString(),
+          acceptedUserIds: [] as string[],
+          bansTeamA: [null, null, null] as (string | null)[],
+          bansTeamB: [null, null, null] as (string | null)[],
+          picksTeamA: [null, null, null] as (string | null)[],
+          picksTeamB: [null, null, null] as (string | null)[],
+          lockInTeamA: [false, false, false],
+          lockInTeamB: [false, false, false],
+          selectionTeamA: null as string | null,
+          selectionTeamB: null as string | null,
+        }
+      : undefined;
+
   const game = await prisma.teamBuilderGame.create({
     data: {
       gameType,
@@ -70,6 +93,7 @@ async function tryCreateQueueMatch(
       teamA: JSON.stringify(teamAPayload),
       teamB: JSON.stringify(teamBPayload),
       source: "ranked_queue",
+      ...(initialDraftState && { draftState: initialDraftState as object }),
     },
   });
 
@@ -87,6 +111,18 @@ export async function GET() {
     return NextResponse.json({ error: "Sign in required" }, { status: 401 });
   }
 
+  // Keep current user marked online (same as /api/nav, /api/online)
+  try {
+    await prisma.user.update({
+      where: { id: session.user.id },
+      data: { lastSeenAt: new Date() },
+    });
+  } catch {
+    // lastSeenAt column may not exist yet
+  }
+
+  // Run matchmaking first so seeded/offline users can still pop (e.g. pop-queue.mjs).
+  // Clean up offline users after, so the queue list stays accurate.
   let recentlyMatchedGameId: string | null = null;
 
   for (const gameType of QUEUE_MATCH_GAMES) {
@@ -107,6 +143,20 @@ export async function GET() {
       }
       break;
     }
+  }
+
+  // Auto-leave queue for users who are no longer online (after matchmaking so pop-queue still works)
+  const since = new Date(Date.now() - ONLINE_WINDOW_MS);
+  try {
+    await prisma.queueEntry.deleteMany({
+      where: {
+        user: {
+          OR: [{ lastSeenAt: null }, { lastSeenAt: { lt: since } }],
+        },
+      },
+    });
+  } catch {
+    // lastSeenAt may not exist on User in older DBs; ignore
   }
 
   const [myEntry, allEntries] = await Promise.all([
@@ -137,7 +187,7 @@ export async function GET() {
     });
   }
 
-  let matchedGame: { id: string; gameType: string; season: number; teamA: unknown; teamB: unknown; status: string; createdAt: string } | null = null;
+  let matchedGame: { id: string; gameType: string; season: number; teamA: unknown; teamB: unknown; status: string; createdAt: string; draftState?: unknown } | null = null;
   if (recentlyMatchedGameId) {
     const g = await prisma.teamBuilderGame.findUnique({
       where: { id: recentlyMatchedGameId },
@@ -151,6 +201,7 @@ export async function GET() {
         teamB: JSON.parse(g.teamB),
         status: g.status,
         createdAt: g.createdAt.toISOString(),
+        ...(g.draftState && { draftState: g.draftState as object }),
       };
     }
   }

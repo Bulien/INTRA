@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { applyDraftTimeoutIfNeeded, type DraftState } from "@/lib/draftTimeout";
 
 export async function GET(
   _req: Request,
@@ -12,7 +13,7 @@ export async function GET(
   }
 
   const { id } = await params;
-  const game = await prisma.teamBuilderGame.findUnique({ where: { id } });
+  let game = await prisma.teamBuilderGame.findUnique({ where: { id } });
   if (!game) {
     return NextResponse.json({ error: "Game not found" }, { status: 404 });
   }
@@ -28,6 +29,22 @@ export async function GET(
     return NextResponse.json({ error: "You are not in this game" }, { status: 403 });
   }
 
+  let draftState = game.draftState as DraftState | null;
+  if (
+    game.gameType === "battlerite" &&
+    game.source === "ranked_queue" &&
+    draftState?.phase === "draft"
+  ) {
+    const afterTimeout = applyDraftTimeoutIfNeeded(draftState);
+    if (afterTimeout) {
+      await prisma.teamBuilderGame.update({
+        where: { id },
+        data: { draftState: afterTimeout as object },
+      });
+      draftState = afterTimeout;
+    }
+  }
+
   let resultVotes: { votesYin: number; votesYang: number } | undefined;
   if (game.status === "pending") {
     const votes = await prisma.teamBuilderResultVote.findMany({
@@ -40,6 +57,22 @@ export async function GET(
     };
   }
 
+  if (!draftState) draftState = game.draftState as DraftState | null;
+  if (draftState && typeof draftState === "object" && draftState.phase === "draft") {
+    draftState = {
+      ...draftState,
+      bansTeamA: Array.isArray(draftState.bansTeamA) ? draftState.bansTeamA : [null, null, null],
+      bansTeamB: Array.isArray(draftState.bansTeamB) ? draftState.bansTeamB : [null, null, null],
+      picksTeamA: Array.isArray(draftState.picksTeamA) ? draftState.picksTeamA : [null, null, null],
+      picksTeamB: Array.isArray(draftState.picksTeamB) ? draftState.picksTeamB : [null, null, null],
+      lockInTeamA: Array.isArray(draftState.lockInTeamA) ? draftState.lockInTeamA : [false, false, false],
+      lockInTeamB: Array.isArray(draftState.lockInTeamB) ? draftState.lockInTeamB : [false, false, false],
+    };
+    console.log("[DRAFT-GET] Returning bans:", { round: draftState.round, bansTeamA: draftState.bansTeamA, bansTeamB: draftState.bansTeamB });
+  }
+  const draftObj = game.draftState as { cancelledByName?: string } | null;
+  const cancelledByName = game.status === "cancelled" && draftObj?.cancelledByName ? draftObj.cancelledByName : undefined;
+
   return NextResponse.json({
     id: game.id,
     gameType: game.gameType,
@@ -51,5 +84,7 @@ export async function GET(
     createdAt: game.createdAt,
     source: game.source ?? "team_builder",
     ...(resultVotes && { resultVotes }),
+    ...(draftState && { draftState }),
+    ...(cancelledByName && { cancelledByName }),
   });
 }

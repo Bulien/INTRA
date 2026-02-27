@@ -2,12 +2,16 @@
  * Seed the queue with 10 users so the next GET /api/queue will create a match
  * (queue pop). Allowed to run on production; use --confirm when DB looks like prod.
  *
- * Usage:
- *   node scripts/pop-queue.mjs [gameType] [--confirm]
+ * Usage (run from project root so -e .env.local finds the file):
+ *   npx dotenv -e .env.local -- node scripts/pop-queue.mjs [gameType] [--confirm]
  *
  * Examples:
- *   node scripts/pop-queue.mjs lol --confirm
- *   node scripts/pop-queue.mjs ow --confirm
+ *   npx dotenv -e .env.local -- node scripts/pop-queue.mjs lol --confirm
+ *   npx dotenv -e .env.local -- node scripts/pop-queue.mjs battlerite --confirm
+ *
+ * If you run from scripts/ or use .\pop-queue.mjs, .env.local is resolved from
+ * the current directory (scripts/.env.local), so DATABASE_URL may come from
+ * your shell and point at prod. Always run from repo root with scripts/pop-queue.mjs.
  *
  * On production-like DATABASE_URL, --confirm is required.
  * gameType: lol (default), ow, or battlerite. lol/ow = 10 players, battlerite = 6.

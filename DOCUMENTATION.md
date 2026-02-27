@@ -78,6 +78,14 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
+### Static assets (images)
+
+Next.js serves static files only from the **`public/`** directory. Put image (or other asset) files in `public/` so they are available at the root URL, e.g.:
+
+- `public/images/Alysia.png` → [http://localhost:3000/images/Alysia.png](http://localhost:3000/images/Alysia.png)
+
+**Do not** create symlinks or junctions to folders outside `public/`. Instead, **copy or move** your files into `public/` (e.g. `public/images/`).
+
 ---
 
 ## 3. Application guide
