@@ -286,9 +286,14 @@ export async function POST(
 
     await recordPlacementsToRanking(game.gameType, game.season, placementsForRanking);
 
+    const placementsJson = placements.map((e) => ({
+      playerName: (e.playerName ?? "").trim(),
+      placement: Math.round(Number(e.placement)),
+    }));
+
     await prisma.teamBuilderGame.update({
       where: { id },
-      data: { status: "result_submitted", winner: null },
+      data: { status: "result_submitted", winner: null, draftState: placementsJson },
     });
 
     return NextResponse.json({ success: true, placements: true });

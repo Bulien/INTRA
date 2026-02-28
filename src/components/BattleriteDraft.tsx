@@ -147,7 +147,15 @@ export function BattleriteDraft({
   const allBannedOrPicked = useCallback(
     (champId: string) => {
       const c = champId.toLowerCase();
-      if (myBannedNames.includes(c)) return true;
+      const currentRoundIsBan = draftState.round === 1 || draftState.round === 2 || draftState.round === 5;
+      if (currentRoundIsBan) {
+        const bA = draftState.bansTeamA ?? [null, null, null];
+        const bB = draftState.bansTeamB ?? [null, null, null];
+        const allBans = [...new Set([...bA, ...bB].filter(Boolean) as string[])];
+        if (allBans.includes(c)) return true;
+      } else {
+        if (myBannedNames.includes(c)) return true;
+      }
       const picksA = draftState.picksTeamA ?? [];
       const picksB = draftState.picksTeamB ?? [];
       if (picksA.some((p) => p === c)) return true;
@@ -155,7 +163,7 @@ export function BattleriteDraft({
       return false;
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [draftState.bansTeamA, draftState.bansTeamB, draftState.picksTeamA, draftState.picksTeamB, isTeamA]
+    [draftState.bansTeamA, draftState.bansTeamB, draftState.picksTeamA, draftState.picksTeamB, draftState.round, isTeamA]
   );
 
   const mySelection = isTeamA ? draftState.selectionTeamA : draftState.selectionTeamB;

@@ -302,12 +302,13 @@ export default function QueueMatchPage() {
   const draftState = game?.draftState as DraftState | undefined;
   const isBattleriteAccept =
     game?.gameType === "battlerite" &&
-    game?.source === "ranked_queue" &&
     draftState?.phase === "accept";
   const isBattleriteDraft =
     game?.gameType === "battlerite" &&
-    game?.source === "ranked_queue" &&
     draftState?.phase === "draft";
+  const isTeamBuilderSource = game?.source === "team_builder";
+  const backHref = isTeamBuilderSource ? "/team-builder" : "/ranking/rankedqueue";
+  const backLabel = isTeamBuilderSource ? "Back to Team Builder" : "Back";
   const handleDraftUpdate = useCallback(
     (partial?: { draftState: DraftState }) => {
       if (partial?.draftState) setGame((prev) => (prev ? { ...prev, draftState: partial.draftState } : null));
@@ -386,11 +387,11 @@ export default function QueueMatchPage() {
             <strong>{declinedByName}</strong> declined the game.
           </Typography>
           <Link
-            href="/ranking/rankedqueue"
+            href={backHref}
             className="inline-flex items-center gap-1 text-sm text-cyan-300 hover:text-cyan-200 font-medium no-underline"
           >
             <ArrowBackIcon sx={{ fontSize: 18 }} />
-            Back to ranked queue
+            {backLabel}
           </Link>
         </Box>
       </Box>
@@ -414,11 +415,11 @@ export default function QueueMatchPage() {
     return (
       <Box sx={{ minHeight: "100vh" }}>
         <Link
-          href="/ranking/rankedqueue"
+          href={backHref}
           className="inline-flex items-center gap-1 text-sm text-neutral-400 hover:text-cyan-300 font-medium p-4 no-underline"
         >
           <ArrowBackIcon sx={{ fontSize: 18 }} />
-          Back
+          {backLabel}
         </Link>
         <BattleriteDraft
           gameId={game.id}
@@ -453,11 +454,11 @@ export default function QueueMatchPage() {
       }}
     >
       <Link
-        href="/ranking/rankedqueue"
+        href={backHref}
         className="inline-flex items-center gap-1 text-sm text-neutral-400 hover:text-cyan-300 font-medium mb-6 no-underline"
       >
         <ArrowBackIcon sx={{ fontSize: 18 }} />
-        Ranked leaderboard
+        {isTeamBuilderSource ? backLabel : "Ranked leaderboard"}
       </Link>
 
       <Box
@@ -478,7 +479,7 @@ export default function QueueMatchPage() {
           }}
         >
           <Typography variant="overline" sx={{ color: "rgba(255,255,255,0.5)", letterSpacing: 1 }}>
-            Queue match
+            {isTeamBuilderSource ? "Team builder" : "Queue match"}
           </Typography>
           <Typography variant="h5" sx={{ color: "#fff", fontWeight: 600, mt: 0.5 }}>
             {gameLabel}

@@ -82,6 +82,7 @@ export async function GET(req: Request) {
         return by?.name ?? by?.username ?? "Someone";
       })(),
       source: g.source ?? "team_builder",
+      ...(g.draftState ? { draftState: g.draftState } : {}),
       ...(g.status === "pending" && votesByGameId[g.id] && { resultVotes: votesByGameId[g.id] }),
     })),
   });
@@ -97,7 +98,7 @@ export async function POST(req: Request) {
   if (err) return err;
 
   const body = await req.json();
-  const { gameType, season, teamA, teamB } = body;
+  const { gameType, season, teamA, teamB, withDraft } = body;
 
   if (!VALID_GAMES.includes(gameType) || typeof season !== "number" || season < 1) {
     return NextResponse.json({ error: "Invalid gameType or season" }, { status: 400 });
@@ -117,13 +118,78 @@ export async function POST(req: Request) {
     );
   }
 
+  let initialDraftState: object | undefined;
+  let resolvedTeamA = teamA;
+  let resolvedTeamB = teamB;
+
+  if (gameType === "battlerite" && withDraft) {
+    const allPlayers = [...teamA, ...teamB] as { id: string; name: string; rating: number }[];
+    if (allPlayers.length !== 6) {
+      return NextResponse.json({ error: "Draft requires exactly 6 players (3 per team)" }, { status: 400 });
+    }
+
+    const playerNames = allPlayers.map((p) => (p.name ?? "").trim().toLowerCase()).filter(Boolean);
+    const users = await prisma.user.findMany({
+      where: {
+        OR: [
+          { name: { in: playerNames, mode: "insensitive" } },
+          { username: { in: playerNames, mode: "insensitive" } },
+        ],
+      },
+      select: { id: true, name: true, username: true },
+    });
+
+    const nameToUser = new Map<string, { id: string; name: string | null; username: string | null }>();
+    for (const u of users) {
+      if (u.name) nameToUser.set(u.name.trim().toLowerCase(), u);
+      if (u.username) nameToUser.set(u.username.trim().toLowerCase(), u);
+    }
+
+    const missing: string[] = [];
+    const resolve = (p: { id: string; name: string; rating: number }) => {
+      const key = (p.name ?? "").trim().toLowerCase();
+      const user = nameToUser.get(key);
+      if (!user) {
+        missing.push(p.name);
+        return p;
+      }
+      return { ...p, id: user.id };
+    };
+
+    resolvedTeamA = (teamA as { id: string; name: string; rating: number }[]).map(resolve);
+    resolvedTeamB = (teamB as { id: string; name: string; rating: number }[]).map(resolve);
+
+    if (missing.length > 0) {
+      return NextResponse.json(
+        { error: `All 6 players need an account for draft. Missing: ${missing.join(", ")}` },
+        { status: 400 }
+      );
+    }
+
+    const now = new Date();
+    initialDraftState = {
+      phase: "draft" as const,
+      round: 1,
+      roundEndsAt: new Date(now.getTime() + 30 * 1000).toISOString(),
+      bansTeamA: [null, null, null] as (string | null)[],
+      bansTeamB: [null, null, null] as (string | null)[],
+      picksTeamA: [null, null, null] as (string | null)[],
+      picksTeamB: [null, null, null] as (string | null)[],
+      lockInTeamA: [false, false, false],
+      lockInTeamB: [false, false, false],
+      selectionTeamA: null as string | null,
+      selectionTeamB: null as string | null,
+    };
+  }
+
   const game = await prisma.teamBuilderGame.create({
     data: {
       gameType,
       season,
       createdById: session.user.id,
-      teamA: JSON.stringify(teamA),
-      teamB: JSON.stringify(teamB),
+      teamA: JSON.stringify(resolvedTeamA),
+      teamB: JSON.stringify(resolvedTeamB),
+      ...(initialDraftState && { draftState: initialDraftState }),
     },
   });
 
@@ -136,5 +202,7 @@ export async function POST(req: Request) {
     createdAt: game.createdAt,
     createdById: game.createdById,
     createdByName: (session.user.name ?? (session.user as { email?: string }).email) ?? "You",
+    source: game.source ?? "team_builder",
+    ...(game.draftState ? { draftState: game.draftState } : {}),
   });
 }

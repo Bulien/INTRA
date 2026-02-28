@@ -40,8 +40,8 @@ export async function POST(
     return NextResponse.json({ error: "Game not found" }, { status: 404 });
   }
 
-  if (game.gameType !== "battlerite" || game.source !== "ranked_queue") {
-    return NextResponse.json({ error: "Draft only for Battlerite ranked games" }, { status: 400 });
+  if (game.gameType !== "battlerite") {
+    return NextResponse.json({ error: "Draft only available for Battlerite games" }, { status: 400 });
   }
 
   let draft = game.draftState as DraftState | null;

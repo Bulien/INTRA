@@ -120,17 +120,26 @@ export async function GET(
 
     let scPlacements: { playerName: string; placement: number }[] | undefined;
     if (g.gameType === "sc") {
-      const gameIndex = scGameIndexById.get(g.id) ?? 0;
-      const allPlayers = [...teamA, ...teamB].map((p) => (p.name ?? "").trim()).filter(Boolean);
-      const placements: { playerName: string; placement: number }[] = [];
-      for (const playerName of allPlayers) {
-        const scores = scoresBySeasonAndName.get(`${g.season}:${normalizeName(playerName)}`);
-        const placement = scores?.[gameIndex] ?? null;
-        if (placement != null && placement >= 1 && placement <= 4) {
-          placements.push({ playerName, placement });
+      // Prefer placements stored directly on the game record (new approach)
+      const stored = g.draftState as { playerName: string; placement: number }[] | null;
+      if (Array.isArray(stored) && stored.length > 0 && typeof stored[0]?.placement === "number") {
+        scPlacements = stored
+          .filter((e) => e.placement >= 1 && e.placement <= 4)
+          .sort((a, b) => a.placement - b.placement);
+      } else {
+        // Fallback for legacy games: reconstruct from RankingPlayer scores by index
+        const gameIndex = scGameIndexById.get(g.id) ?? 0;
+        const allPlayers = [...teamA, ...teamB].map((p) => (p.name ?? "").trim()).filter(Boolean);
+        const placements: { playerName: string; placement: number }[] = [];
+        for (const playerName of allPlayers) {
+          const scores = scoresBySeasonAndName.get(`${g.season}:${normalizeName(playerName)}`);
+          const placement = scores?.[gameIndex] ?? null;
+          if (placement != null && placement >= 1 && placement <= 4) {
+            placements.push({ playerName, placement });
+          }
         }
+        scPlacements = placements.length > 0 ? placements.sort((a, b) => a.placement - b.placement) : undefined;
       }
-      scPlacements = placements.length > 0 ? placements.sort((a, b) => a.placement - b.placement) : undefined;
     }
 
     // SC: 1st/2nd = won, 3rd/4th = lost; non-SC: use team winner

@@ -32,7 +32,6 @@ export async function GET(
   let draftState = game.draftState as DraftState | null;
   if (
     game.gameType === "battlerite" &&
-    game.source === "ranked_queue" &&
     draftState?.phase === "draft"
   ) {
     const afterTimeout = applyDraftTimeoutIfNeeded(draftState);

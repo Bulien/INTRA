@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { balanceTeams, type Player } from "@/lib/teamBalancer";
 import {
@@ -168,6 +169,8 @@ type SharedGame = {
   createdAt: string;
   createdById?: string;
   createdByName: string;
+  source?: string;
+  draftState?: { phase?: string; [key: string]: unknown };
   resultVotes?: { votesYin: number; votesYang: number };
 };
 
@@ -183,12 +186,13 @@ async function createSharedGame(
   gameType: string,
   season: number,
   teamA: Player[],
-  teamB: Player[]
+  teamB: Player[],
+  withDraft?: boolean
 ): Promise<{ ok: boolean; game?: SharedGame | null; error?: string }> {
   const res = await fetch("/api/team-builder/games", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ gameType, season, teamA, teamB }),
+    body: JSON.stringify({ gameType, season, teamA, teamB, ...(withDraft ? { withDraft: true } : {}) }),
   });
   const data = res.ok ? await res.json() : await res.json().catch(() => ({}));
   if (!res.ok) {
@@ -239,6 +243,7 @@ async function cancelSharedGame(gameId: string): Promise<{ ok: boolean; error?: 
 }
 
 export default function TeamBuilderPage() {
+  const router = useRouter();
   const [players, setPlayers] = useState<Player[]>([]);
   const [newName, setNewName] = useState("");
   const [selectedGame, setSelectedGame] = useState("lol");
@@ -678,6 +683,28 @@ export default function TeamBuilderPage() {
     }
   }, [session?.user, result.teamA, result.teamB, selectedGame, maxSeason]);
 
+  const handleStartDraft = useCallback(async () => {
+    if (!session?.user || result.teamA.length === 0 || result.teamB.length === 0) return;
+    setStartGameError(null);
+    setCreatingGame(true);
+    try {
+      const result_ = await createSharedGame(
+        selectedGame,
+        maxSeason,
+        result.teamA,
+        result.teamB,
+        true
+      );
+      if (result_.ok && result_.game) {
+        router.push(`/queue-match/${result_.game.id}`);
+      } else if (result_.error) {
+        setStartGameError(result_.error);
+      }
+    } finally {
+      setCreatingGame(false);
+    }
+  }, [session?.user, result.teamA, result.teamB, selectedGame, maxSeason, router]);
+
   const [submitSharedError, setSubmitSharedError] = useState<string | null>(null);
 
   const handleSubmitSharedResult = useCallback(
@@ -1001,6 +1028,16 @@ export default function TeamBuilderPage() {
                 ) : undefined}
                 footer={
                   <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5, width: "100%" }}>
+                    {game.draftState && (game.draftState.phase === "draft" || game.draftState.phase === "accept") ? (
+                      <Button
+                        fullWidth variant="contained" size="large"
+                        component={Link} href={`/queue-match/${game.id}`}
+                        sx={{ py: 1.5, bgcolor: "#67e8f9", color: "#0f0f0f", fontWeight: 700, "&:hover": { bgcolor: "#22d3ee" }, textDecoration: "none" }}
+                      >
+                        Go to Draft
+                      </Button>
+                    ) : (
+                    <>
                     {game.resultVotes && game.gameType !== "sc" && (
                       <Typography variant="caption" color="text.secondary" sx={{ textAlign: "center" }}>
                         {game.resultVotes.votesYin} vote{game.resultVotes.votesYin !== 1 ? "s" : ""} for Yin, {game.resultVotes.votesYang} for Yang. Two matching votes needed to confirm.
@@ -1036,6 +1073,8 @@ export default function TeamBuilderPage() {
                       </Box>
                     )}
                   </Box>
+                  </>
+                  )}
                   </Box>
                 }
               >
@@ -1580,6 +1619,35 @@ export default function TeamBuilderPage() {
                     ? "Game has started"
                     : "Start game (share with players)"}
               </Button>
+              {selectedGame === "battlerite" && (() => {
+                const allInTeams = [...result.teamA, ...result.teamB];
+                const allRegistered = allInTeams.length === 6 && allInTeams.every(
+                  (p) => registeredSet.has((p.name ?? "").trim().toLowerCase())
+                );
+                return (
+                  <Tooltip
+                    title={!allRegistered ? "All 6 players must have an account to use draft" : ""}
+                    placement="top"
+                    arrow
+                  >
+                    <span>
+                      <Button
+                        variant="contained"
+                        disabled={creatingGame || hasActiveSharedGame || players.length > maxPlayers || !allRegistered}
+                        onClick={handleStartDraft}
+                        sx={{
+                          bgcolor: hasActiveSharedGame || !allRegistered ? "rgba(255,255,255,0.2)" : "rgba(103,232,249,0.9)",
+                          color: hasActiveSharedGame || !allRegistered ? "rgba(255,255,255,0.5)" : "#0f0f0f",
+                          fontWeight: 700,
+                          "&:hover": { bgcolor: hasActiveSharedGame || !allRegistered ? undefined : "#22d3ee" },
+                        }}
+                      >
+                        {creatingGame ? "Creating…" : "Start with Draft"}
+                      </Button>
+                    </span>
+                  </Tooltip>
+                );
+              })()}
               {startGameError && (
                 <Typography variant="body2" color="error" sx={{ mt: 1 }}>
                   {startGameError}
@@ -1647,6 +1715,16 @@ export default function TeamBuilderPage() {
                     ) : undefined}
                     footer={
                       <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5, width: "100%" }}>
+                        {game.draftState && (game.draftState.phase === "draft" || game.draftState.phase === "accept") ? (
+                          <Button
+                            fullWidth variant="contained" size="medium"
+                            component={Link} href={`/queue-match/${game.id}`}
+                            sx={{ py: 1.5, bgcolor: "#67e8f9", color: "#0f0f0f", fontWeight: 700, "&:hover": { bgcolor: "#22d3ee" }, textDecoration: "none" }}
+                          >
+                            Go to Draft
+                          </Button>
+                        ) : (
+                        <>
                         {game.resultVotes && game.gameType !== "sc" && (
                           <Typography variant="caption" color="text.secondary" sx={{ textAlign: "center" }}>
                             {game.resultVotes.votesYin} vote{game.resultVotes.votesYin !== 1 ? "s" : ""} for Yin, {game.resultVotes.votesYang} for Yang. Two matching votes needed to confirm.
@@ -1733,6 +1811,8 @@ export default function TeamBuilderPage() {
                           </Box>
                         )}
                         </Box>
+                        </>
+                        )}
                       </Box>
                     }
                   >

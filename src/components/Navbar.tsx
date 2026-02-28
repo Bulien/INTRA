@@ -22,6 +22,7 @@ const navLinks = [
   { href: "/", label: "Home" },
   { href: "/team-builder", label: "Team Builder" },
   { href: "/ranking", label: "Ranking" },
+  { href: "/tools", label: "Tools" },
 ];
 
 const QUEUE_GAMES = [
