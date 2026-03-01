@@ -6,6 +6,7 @@ import { useSession } from "next-auth/react";
 import { Box, Skeleton, Typography } from "@mui/material";
 import EmojiEventsIcon from "@mui/icons-material/EmojiEvents";
 import { computeElo } from "@/lib/elo";
+import { scRating } from "@/lib/scRating";
 
 type PlayerRow = {
   id: string;
@@ -41,7 +42,8 @@ function computeStats(scores: (number | null)[], gameType: string, apiElo?: numb
       games > 0
         ? Math.round((placementScores.reduce((a, b) => a + b, 0) / games) * 10) / 10
         : 0;
-    return { wins: 0, losses: 0, games, winrate: 0, avgPlace, elo: 0, isSc: true };
+    const scSortKey = scRating(placementScores);
+    return { wins: 0, losses: 0, games, winrate: 0, avgPlace, elo: 0, isSc: true, scSortKey };
   }
   const wins = scores.filter((s) => s === 1).length;
   const losses = scores.filter((s) => s === 0).length;
@@ -59,6 +61,8 @@ type RowWithStats = PlayerRow & {
   avgPlace: number;
   elo: number;
   isSc: boolean;
+  /** SC only: rating used for sort (prior shrinkage). Lower = better. */
+  scSortKey?: number;
 };
 
 export function LeaderboardClient({
@@ -94,7 +98,7 @@ export function LeaderboardClient({
       })) as RowWithStats[];
       list.sort((a, b) =>
         gameType === "sc"
-          ? (a.avgPlace || 999) - (b.avgPlace || 999) || (a.playerName || "").localeCompare(b.playerName || "")
+          ? (a.scSortKey ?? a.avgPlace ?? 999) - (b.scSortKey ?? b.avgPlace ?? 999) || (a.playerName || "").localeCompare(b.playerName || "")
           : b.elo - a.elo || (a.playerName || "").localeCompare(b.playerName || "")
       );
       setPlayers(list);
@@ -105,7 +109,7 @@ export function LeaderboardClient({
       })) as RowWithStats[];
       list.sort((a, b) =>
         gameType === "sc"
-          ? (a.avgPlace || 999) - (b.avgPlace || 999) || (a.playerName || "").localeCompare(b.playerName || "")
+          ? (a.scSortKey ?? a.avgPlace ?? 999) - (b.scSortKey ?? b.avgPlace ?? 999) || (a.playerName || "").localeCompare(b.playerName || "")
           : b.elo - a.elo || (a.playerName || "").localeCompare(b.playerName || "")
       );
       setPlayers(list);
@@ -149,7 +153,7 @@ export function LeaderboardClient({
               key={i}
               sx={{
                 display: "grid",
-                gridTemplateColumns: gameType === "sc" ? "56px 1fr 80px 80px" : "56px 1fr 72px 72px 80px",
+                gridTemplateColumns: gameType === "sc" ? "56px 1fr 80px 80px 80px" : "56px 1fr 72px 72px 80px",
                 gap: 2,
                 alignItems: "center",
                 py: 1.5,
@@ -161,7 +165,7 @@ export function LeaderboardClient({
               <Skeleton variant="text" width={140} height={24} sx={{ maxWidth: "100%" }} />
               <Skeleton variant="text" width={48} height={20} />
               <Skeleton variant="text" width={48} height={20} />
-              {gameType !== "sc" && <Skeleton variant="text" width={40} height={20} />}
+              <Skeleton variant="text" width={40} height={20} />
             </Box>
           ))}
         </Box>
@@ -181,7 +185,46 @@ export function LeaderboardClient({
               No players yet. Play team builder and submit results to appear here.
             </Typography>
           ) : (
-            players.map((p, index) => {
+            <>
+              {/* Header row */}
+              <Box
+                sx={{
+                  display: "grid",
+                  gridTemplateColumns: gameType === "sc" ? "56px 1fr 80px 80px 80px" : "56px 1fr 72px 72px 80px",
+                  gap: 2,
+                  alignItems: "center",
+                  py: 1,
+                  px: 2,
+                  borderBottom: "1px solid rgba(255,255,255,0.12)",
+                }}
+              >
+                <Typography variant="caption" sx={{ color: "text.secondary", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                  #
+                </Typography>
+                <Typography variant="caption" sx={{ color: "text.secondary", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                  Player
+                </Typography>
+                {gameType === "sc" ? (
+                  <>
+                    <Typography variant="caption" sx={{ color: "text.secondary", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5, fontVariantNumeric: "tabular-nums" }}>
+                      Games
+                    </Typography>
+                    <Typography variant="caption" sx={{ color: "text.secondary", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5, fontVariantNumeric: "tabular-nums" }}>
+                      Avg
+                    </Typography>
+                    <Typography variant="caption" sx={{ color: "text.secondary", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5, fontVariantNumeric: "tabular-nums" }}>
+                      Rating
+                    </Typography>
+                  </>
+                ) : (
+                  <>
+                    <Typography variant="caption" sx={{ color: "text.secondary", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5 }}>W</Typography>
+                    <Typography variant="caption" sx={{ color: "text.secondary", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5 }}>L</Typography>
+                    <Typography variant="caption" sx={{ color: "text.secondary", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5 }}>Elo</Typography>
+                  </>
+                )}
+              </Box>
+              {players.map((p, index) => {
               const rank = index + 1;
               const isSc = gameType === "sc";
               const isYou = Boolean(session?.user && (p.playerName ?? "").trim().toLowerCase() === (session.user?.name ?? session.user?.email ?? "").trim().toLowerCase());
@@ -190,7 +233,7 @@ export function LeaderboardClient({
                   key={p.id}
                   sx={{
                     display: "grid",
-                    gridTemplateColumns: isSc ? "56px 1fr 80px 80px" : "56px 1fr 72px 72px 80px",
+                    gridTemplateColumns: isSc ? "56px 1fr 80px 80px 80px" : "56px 1fr 72px 72px 80px",
                     gap: 2,
                     alignItems: "center",
                     py: 1.5,
@@ -232,6 +275,9 @@ export function LeaderboardClient({
                       <Typography variant="body2" fontWeight={600} sx={{ color: "#67e8f9", fontVariantNumeric: "tabular-nums" }}>
                         Avg {p.avgPlace || "—"}
                       </Typography>
+                      <Typography variant="body2" fontWeight={600} sx={{ color: "#e0f2fe", fontVariantNumeric: "tabular-nums" }}>
+                        {p.games > 0 && p.scSortKey != null ? Number(p.scSortKey).toFixed(2) : "—"}
+                      </Typography>
                     </>
                   ) : (
                     <>
@@ -248,7 +294,8 @@ export function LeaderboardClient({
                   )}
                 </Box>
               );
-            })
+            })}
+            </>
           )}
         </Box>
       )}

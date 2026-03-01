@@ -437,6 +437,7 @@ export default function QueueMatchPage() {
   const un = currentUserName.toLowerCase();
   const inYin = game.teamA.some((p) => (p.name ?? "").trim().toLowerCase() === un);
   const inYang = game.teamB.some((p) => (p.name ?? "").trim().toLowerCase() === un);
+  const isSpectator = !inYin && !inYang;
   const canSubmitYin = !inYin; // only losing team can submit
   const canSubmitYang = !inYang;
   const isPending = game.status === "pending";
@@ -553,6 +554,19 @@ export default function QueueMatchPage() {
               <CheckCircleIcon sx={{ color: "#22c55e", fontSize: 22 }} />
               <Typography variant="body2" sx={{ color: "#86efac", fontWeight: 500 }}>
                 {game.winner === "yin" ? "Team Yin" : "Team Yang"} won — result recorded
+              </Typography>
+            </Box>
+          ) : isSpectator ? (
+            <Box
+              sx={{
+                py: 1.5,
+                borderRadius: 2,
+                bgcolor: "rgba(255,255,255,0.04)",
+                border: "1px solid rgba(255,255,255,0.08)",
+              }}
+            >
+              <Typography variant="body2" sx={{ color: "rgba(255,255,255,0.7)", textAlign: "center" }}>
+                You're viewing this game as a spectator. You cannot submit results.
               </Typography>
             </Box>
           ) : (

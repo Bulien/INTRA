@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { replayElo, BASE_ELO } from "@/lib/eloReplay";
+import { scRating } from "@/lib/scRating";
 
 const GAME_TYPES = ["lol", "ow", "sc", "battlerite"] as const;
 const TEAM_GAMES = ["lol", "ow", "battlerite"] as const;
@@ -146,8 +147,8 @@ export async function GET(
       const s = (JSON.parse(p.scores || "[]") as (number | null)[]);
       if (gameType === "sc") {
         const placeScores = s.filter((x): x is number => x !== null && x >= 1 && x <= 4);
-        const avg = placeScores.length > 0 ? placeScores.reduce((a, b) => a + b, 0) / placeScores.length : 999;
-        return { name: p.name, sortKey: avg, nameLower: normalizeName(p.name) };
+        const sortKey = placeScores.length > 0 ? scRating(placeScores) : 999;
+        return { name: p.name, sortKey, nameLower: normalizeName(p.name) };
       }
       const sortKey = replayElos[normalizeName(p.name)] ?? BASE_ELO;
       return { name: p.name, sortKey, nameLower: normalizeName(p.name) };

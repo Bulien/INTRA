@@ -24,8 +24,9 @@ export async function GET(
   const userName = (session.user.name ?? session.user.email ?? "").trim().toLowerCase();
   const isAdmin = (session.user as { role?: string }).role === "admin";
   const userInGame = allNames.includes(userName);
+  const isPending = game.status === "pending";
 
-  if (!userInGame && !isAdmin) {
+  if (!userInGame && !isAdmin && !isPending) {
     return NextResponse.json({ error: "You are not in this game" }, { status: 403 });
   }
 

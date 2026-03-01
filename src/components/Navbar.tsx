@@ -616,11 +616,10 @@ export function Navbar() {
                   ) : (
                     ongoingGames.map((game, index) => {
                       const gameLabel = QUEUE_GAMES.find((g) => g.id === game.gameType)?.label ?? game.gameType;
-                      const href = game.source === "ranked_queue" ? `/queue-match/${game.id}` : "/team-builder";
                       return (
                         <div key={game.id} className="rounded border border-white/10 bg-white/5 p-2 text-sm">
                           <Link
-                            href={href}
+                            href={`/queue-match/${game.id}`}
                             className="font-semibold text-cyan-200 hover:text-cyan-100 block mb-1.5"
                             onClick={() => setOngoingPinned(false)}
                           >
@@ -650,8 +649,10 @@ export function Navbar() {
                     </Link>
                     <button
                       type="button"
-                      className="text-sm font-medium text-cyan-300 hover:text-cyan-200 transition-colors text-left"
+                      disabled={activeGamesCount > 0}
+                      className="text-sm font-medium text-cyan-300 hover:text-cyan-200 transition-colors text-left disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:text-cyan-300"
                       onClick={() => {
+                        if (activeGamesCount > 0) return;
                         setOngoingPinned(false);
                         setPlayModalOpen(true);
                       }}
@@ -683,9 +684,11 @@ export function Navbar() {
           )}
           <button
             type="button"
-            onClick={() => setPlayModalOpen(true)}
-            className="flex items-center gap-3 px-10 py-1 rounded-xl text-xl font-bold text-orange-200 bg-orange-950/90 hover:bg-orange-900 border-2 border-orange-500/70 shadow-[0_0_20px_rgba(234,88,12,0.45)] hover:shadow-[0_0_28px_rgba(234,88,12,0.55)] transition-all"
-            aria-label="Join queue to play"
+            disabled={activeGamesCount > 0}
+            onClick={() => activeGamesCount === 0 && setPlayModalOpen(true)}
+            className="flex items-center gap-3 px-10 py-1 rounded-xl text-xl font-bold text-orange-200 bg-orange-950/90 hover:bg-orange-900 border-2 border-orange-500/70 shadow-[0_0_20px_rgba(234,88,12,0.45)] hover:shadow-[0_0_28px_rgba(234,88,12,0.55)] transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-orange-950/90"
+            aria-label={activeGamesCount > 0 ? "Finish your game first" : "Join queue to play"}
+            title={activeGamesCount > 0 ? "Finish your game first" : undefined}
           >
             <SportsEsportsIcon sx={{ fontSize: 36 }} />
             Play
@@ -962,9 +965,11 @@ export function Navbar() {
             {session && (
               <button
                 type="button"
-                onClick={() => { setMobileMenuOpen(false); setPlayModalOpen(true); }}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-bold text-orange-200 bg-orange-950/90 hover:bg-orange-900 border border-orange-500/70 shadow-[0_0_14px_rgba(234,88,12,0.4)] transition-all"
-                aria-label="Join queue to play"
+                disabled={activeGamesCount > 0}
+                onClick={() => { if (activeGamesCount === 0) { setMobileMenuOpen(false); setPlayModalOpen(true); } }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-bold text-orange-200 bg-orange-950/90 hover:bg-orange-900 border border-orange-500/70 shadow-[0_0_14px_rgba(234,88,12,0.4)] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                aria-label={activeGamesCount > 0 ? "Finish your game first" : "Join queue to play"}
+                title={activeGamesCount > 0 ? "Finish your game first" : undefined}
               >
                 <SportsEsportsIcon sx={{ fontSize: 20 }} />
                 Play

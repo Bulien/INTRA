@@ -8,6 +8,7 @@ import { Box, Card, CardContent, Typography, Button, Skeleton } from "@mui/mater
 import EmojiEventsIcon from "@mui/icons-material/EmojiEvents";
 import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
 import { computeElo } from "@/lib/elo";
+import { scRating } from "@/lib/scRating";
 
 const GAMES = [
   { slug: "lol", name: "League of Legends", accent: "linear-gradient(135deg, #67e8f9 0%, #22d3ee 100%)" },
@@ -35,12 +36,12 @@ async function fetchRanking(game: string, season: number) {
   };
 }
 
-/** Compute stats for ranking preview. For SC: placements 1–4 (games, avg place). For others: wins/losses (games, elo from API or fallback). */
+/** Compute stats for ranking preview. For SC: placements 1–4 (games, avg, rating for sort). For others: wins/losses (games, elo from API or fallback). */
 function playerStats(
   scores: (number | null)[],
   gameSlug: string,
   apiElo?: number
-): { games: number; avg: number; elo: number | null } {
+): { games: number; avg: number; rating?: number; elo: number | null } {
   if (gameSlug === "sc") {
     const placementScores = scores.filter((s): s is number => s !== null && s >= 1 && s <= 4);
     const games = placementScores.length;
@@ -48,7 +49,8 @@ function playerStats(
       games > 0
         ? Math.round((placementScores.reduce((a, b) => a + b, 0) / games) * 10) / 10
         : 999; // no games → sort last
-    return { games, avg, elo: null };
+    const rating = games > 0 ? scRating(placementScores) : 999;
+    return { games, avg, rating, elo: null };
   }
   const wins = scores.filter((s) => s === 1).length;
   const losses = scores.filter((s) => s === 0).length;
@@ -201,12 +203,16 @@ export default function HomePage() {
           {GAMES.map((g) => {
             const d = data[g.slug];
             const players = d?.players ?? [];
-            const lowerIsBetter = g.slug === "sc"; // SC: lowest avg placement = best
+            const lowerIsBetter = g.slug === "sc"; // SC: lowest rating = best
             const withAvg = players
               .map((p) => ({ ...p, ...playerStats(p.scores, g.slug, p.elo) }))
               .filter((p) => p.playerName?.trim())
               .filter((p) => p.games > 0) // only players with at least one game in this mode
-              .sort((a, b) => (lowerIsBetter ? a.avg - b.avg : b.avg - a.avg))
+              .sort((a, b) =>
+                g.slug === "sc"
+                  ? (a.rating ?? 999) - (b.rating ?? 999)
+                  : b.avg - a.avg
+              )
               .slice(0, 10);
             return (
               <Card
@@ -305,6 +311,19 @@ export default function HomePage() {
                           >
                             {p.games} games
                           </Typography>
+                          {g.slug === "sc" && (
+                            <Typography
+                              component="span"
+                              sx={{
+                                fontFamily: "var(--font-geist-mono), ui-monospace, monospace",
+                                fontSize: "0.8rem",
+                                color: "text.secondary",
+                                flexShrink: 0,
+                              }}
+                            >
+                              Avg {Number(p.avg).toFixed(1)}
+                            </Typography>
+                          )}
                           <Typography
                             component="span"
                             sx={{
@@ -316,7 +335,7 @@ export default function HomePage() {
                               flexShrink: 0,
                             }}
                           >
-                            {g.slug === "sc" ? (p.games > 0 ? `Avg ${Number(p.avg).toFixed(1)}` : "—") : (p.elo !== null ? p.elo : "—")}
+                            {g.slug === "sc" ? (p.games > 0 && p.rating != null ? `Rating ${Number(p.rating).toFixed(2)}` : "—") : (p.elo !== null ? p.elo : "—")}
                           </Typography>
                         </li>
                         );
