@@ -52,7 +52,61 @@ type MatchedGame = {
 
 type OnlineUser = { id: string; name: string | null; username: string | null };
 
-type OngoingGameNav = { id: string; gameType: string; source: string; teamA: string[]; teamB: string[] };
+type OngoingGameNav = { id: string; gameType: string; source: string; teamA: string[]; teamB: string[]; createdAt: string };
+
+function formatGameDuration(createdAt: string): string {
+  const start = new Date(createdAt).getTime();
+  const elapsed = Date.now() - start;
+  const mins = Math.floor(elapsed / 60_000);
+  const hours = Math.floor(mins / 60);
+  if (hours > 0) return `${hours}h ${mins % 60}m`;
+  if (mins > 0) return `${mins} min`;
+  return "< 1 min";
+}
+
+function OngoingGameItem({
+  game,
+  index,
+  gameLabel,
+  onLinkClick,
+}: {
+  game: OngoingGameNav;
+  index: number;
+  gameLabel: string;
+  onLinkClick: () => void;
+}) {
+  const [duration, setDuration] = useState(() => formatGameDuration(game.createdAt));
+  useEffect(() => {
+    const t = setInterval(() => setDuration(formatGameDuration(game.createdAt)), 60_000);
+    return () => clearInterval(t);
+  }, [game.createdAt]);
+  return (
+    <div className="rounded border border-white/10 bg-white/5 p-2 text-sm">
+      <div className="flex items-center justify-between gap-2 mb-1.5">
+        <Link
+          href={`/queue-match/${game.id}`}
+          className="font-semibold text-cyan-200 hover:text-cyan-100"
+          onClick={onLinkClick}
+        >
+          Game {index + 1}: {gameLabel}
+        </Link>
+        <span className="text-neutral-500 text-xs shrink-0" title="Time in progress">
+          {duration}
+        </span>
+      </div>
+      <div className="space-y-1 text-neutral-300">
+        <div>
+          <span className="text-neutral-500 text-xs">Team A: </span>
+          {game.teamA.join(", ") || "—"}
+        </div>
+        <div>
+          <span className="text-neutral-500 text-xs">Team B: </span>
+          {game.teamB.join(", ") || "—"}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function isAdmin(session: { user?: { role?: string } | null } | null): boolean {
   return (session?.user as { role?: string } | undefined)?.role === "admin";
@@ -617,25 +671,13 @@ export function Navbar() {
                     ongoingGames.map((game, index) => {
                       const gameLabel = QUEUE_GAMES.find((g) => g.id === game.gameType)?.label ?? game.gameType;
                       return (
-                        <div key={game.id} className="rounded border border-white/10 bg-white/5 p-2 text-sm">
-                          <Link
-                            href={`/queue-match/${game.id}`}
-                            className="font-semibold text-cyan-200 hover:text-cyan-100 block mb-1.5"
-                            onClick={() => setOngoingPinned(false)}
-                          >
-                            Game {index + 1}: {gameLabel}
-                          </Link>
-                          <div className="space-y-1 text-neutral-300">
-                            <div>
-                              <span className="text-neutral-500 text-xs">Team A: </span>
-                              {game.teamA.join(", ") || "—"}
-                            </div>
-                            <div>
-                              <span className="text-neutral-500 text-xs">Team B: </span>
-                              {game.teamB.join(", ") || "—"}
-                            </div>
-                          </div>
-                        </div>
+                        <OngoingGameItem
+                          key={game.id}
+                          game={game}
+                          index={index}
+                          gameLabel={gameLabel}
+                          onLinkClick={() => setOngoingPinned(false)}
+                        />
                       );
                     })
                   )}

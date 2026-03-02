@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { Box, Button, Typography } from "@mui/material";
@@ -16,6 +16,8 @@ function AcceptScreen({
   draftState,
   currentUserId,
   onUpdate,
+  isAdmin,
+  backHref,
 }: {
   gameId: string;
   teamA: { id: string; name: string; rating: number }[];
@@ -23,11 +25,15 @@ function AcceptScreen({
   draftState: DraftState;
   currentUserId: string;
   onUpdate: () => void;
+  isAdmin?: boolean;
+  backHref: string;
 }) {
+  const router = useRouter();
   const acceptDeadline = draftState.acceptDeadline ?? "";
   const acceptedIds = new Set(draftState.acceptedUserIds ?? []);
   const [secondsLeft, setSecondsLeft] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
 
   useEffect(() => {
     if (!acceptDeadline) return;
@@ -49,18 +55,42 @@ function AcceptScreen({
     }
   };
 
+  const handleCancelGame = async () => {
+    if (!gameId || cancelling || !isAdmin) return;
+    setCancelling(true);
+    try {
+      const res = await fetch(`/api/team-builder/games/${gameId}/cancel`, { method: "POST" });
+      if (res.ok) router.push(backHref);
+    } finally {
+      setCancelling(false);
+    }
+  };
+
   const allPlayers = [...teamA, ...teamB];
   const hasAccepted = currentUserId && acceptedIds.has(currentUserId);
 
   return (
     <Box sx={{ minHeight: "100vh", py: 4, px: 2, maxWidth: 480, mx: "auto" }}>
-      <Link
-        href="/ranking/rankedqueue"
-        className="inline-flex items-center gap-1 text-sm text-neutral-400 hover:text-cyan-300 font-medium mb-6 no-underline"
-      >
-        <ArrowBackIcon sx={{ fontSize: 18 }} />
-        Back
-      </Link>
+      <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 2, mb: 2 }}>
+        <Link
+          href={backHref}
+          className="inline-flex items-center gap-1 text-sm text-neutral-400 hover:text-cyan-300 font-medium no-underline"
+        >
+          <ArrowBackIcon sx={{ fontSize: 18 }} />
+          Back
+        </Link>
+        {isAdmin && (
+          <Button
+            size="small"
+            variant="outlined"
+            disabled={cancelling}
+            onClick={handleCancelGame}
+            sx={{ borderColor: "rgba(239,68,68,0.5)", color: "#fca5a5", "&:hover": { borderColor: "#ef4444", bgcolor: "rgba(239,68,68,0.1)" } }}
+          >
+            {cancelling ? "Cancelling…" : "Cancel game (admin)"}
+          </Button>
+        )}
+      </Box>
       <Box
         sx={{
           borderRadius: 3,
@@ -255,6 +285,32 @@ function TeamCard({
   );
 }
 
+function AdminCancelButton({ gameId, backHref }: { gameId: string; backHref: string }) {
+  const router = useRouter();
+  const [cancelling, setCancelling] = useState(false);
+  const handleCancel = async () => {
+    if (!gameId || cancelling) return;
+    setCancelling(true);
+    try {
+      const res = await fetch(`/api/team-builder/games/${gameId}/cancel`, { method: "POST" });
+      if (res.ok) router.push(backHref);
+    } finally {
+      setCancelling(false);
+    }
+  };
+  return (
+    <Button
+      size="small"
+      variant="outlined"
+      disabled={cancelling}
+      onClick={handleCancel}
+      sx={{ borderColor: "rgba(239,68,68,0.5)", color: "#fca5a5", "&:hover": { borderColor: "#ef4444", bgcolor: "rgba(239,68,68,0.1)" } }}
+    >
+      {cancelling ? "Cancelling…" : "Cancel game (admin)"}
+    </Button>
+  );
+}
+
 export default function QueueMatchPage() {
   const params = useParams();
   const gameId = typeof params?.gameId === "string" ? params.gameId : "";
@@ -407,20 +463,28 @@ export default function QueueMatchPage() {
         draftState={draftState}
         currentUserId={session?.user?.id ?? ""}
         onUpdate={fetchGame}
+        isAdmin={(session?.user as { role?: string })?.role === "admin"}
+        backHref={backHref}
       />
     );
   }
 
   if (isBattleriteDraft && game.draftState) {
+    const isAdmin = (session?.user as { role?: string })?.role === "admin";
     return (
       <Box sx={{ minHeight: "100vh" }}>
-        <Link
-          href={backHref}
-          className="inline-flex items-center gap-1 text-sm text-neutral-400 hover:text-cyan-300 font-medium p-4 no-underline"
-        >
-          <ArrowBackIcon sx={{ fontSize: 18 }} />
-          {backLabel}
-        </Link>
+        <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 2, p: 2 }}>
+          <Link
+            href={backHref}
+            className="inline-flex items-center gap-1 text-sm text-neutral-400 hover:text-cyan-300 font-medium no-underline"
+          >
+            <ArrowBackIcon sx={{ fontSize: 18 }} />
+            {backLabel}
+          </Link>
+          {isAdmin && (
+            <AdminCancelButton gameId={game.id} backHref={backHref} />
+          )}
+        </Box>
         <BattleriteDraft
           gameId={game.id}
           teamA={game.teamA}
@@ -445,6 +509,8 @@ export default function QueueMatchPage() {
   const eloA = game.teamA.reduce((s, p) => s + (p.rating ?? 0), 0);
   const eloB = game.teamB.reduce((s, p) => s + (p.rating ?? 0), 0);
 
+  const isAdmin = (session?.user as { role?: string })?.role === "admin";
+
   return (
     <Box
       sx={{
@@ -454,13 +520,18 @@ export default function QueueMatchPage() {
         px: 2,
       }}
     >
-      <Link
-        href={backHref}
-        className="inline-flex items-center gap-1 text-sm text-neutral-400 hover:text-cyan-300 font-medium mb-6 no-underline"
-      >
-        <ArrowBackIcon sx={{ fontSize: 18 }} />
-        {isTeamBuilderSource ? backLabel : "Ranked leaderboard"}
-      </Link>
+      <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 2, mb: 3 }}>
+        <Link
+          href={backHref}
+          className="inline-flex items-center gap-1 text-sm text-neutral-400 hover:text-cyan-300 font-medium no-underline"
+        >
+          <ArrowBackIcon sx={{ fontSize: 18 }} />
+          {isTeamBuilderSource ? backLabel : "Ranked leaderboard"}
+        </Link>
+        {isAdmin && isPending && (
+          <AdminCancelButton gameId={game.id} backHref={backHref} />
+        )}
+      </Box>
 
       <Box
         sx={{

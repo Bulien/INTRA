@@ -31,8 +31,18 @@ export async function POST(
   if (isQueueGame && !isAdmin && !(inAcceptPhase && isPlayer)) {
     return NextResponse.json({ error: "Only an admin can cancel a queue match" }, { status: 403 });
   }
-  if (!isQueueGame && !isCreator && !isAdmin) {
-    return NextResponse.json({ error: "Only the game creator or an admin can cancel this game" }, { status: 403 });
+  // Team builder: only creator (in accept phase) or admin can cancel; once game has started, only admin.
+  if (!isQueueGame) {
+    if (isAdmin) {
+      // allow
+    } else if (inAcceptPhase && isCreator) {
+      // allow creator to cancel before game starts
+    } else {
+      return NextResponse.json(
+        { error: inAcceptPhase ? "Only the game creator or an admin can cancel this game" : "Only an admin can cancel a game that has already started" },
+        { status: 403 }
+      );
+    }
   }
 
   let cancelledByName: string | null = null;

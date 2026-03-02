@@ -992,7 +992,8 @@ export default function TeamBuilderPage() {
             const inYang = game.teamB.some((p) => (p.name ?? "").trim().toLowerCase() === un);
             const isCreator = Boolean(game.createdById && session?.user?.id && game.createdById === session.user.id);
             const isQueueGame = (game as { source?: string }).source === "ranked_queue";
-            const canCancelGame = isAdmin || (isCreator && !isQueueGame);
+            const inAcceptPhase = (game.draftState as { phase?: string } | undefined)?.phase === "accept";
+            const canCancelGame = isAdmin || (isCreator && !isQueueGame && inAcceptPhase);
             const canYin = inYang || isAdmin;
             const canYang = inYin || isAdmin;
             const registeredNorm = new Set((registeredUserNames ?? []).map((n) => String(n).trim().toLowerCase()));
@@ -1670,7 +1671,8 @@ export default function TeamBuilderPage() {
                 const inYang = game.teamB.some((p) => (p.name ?? "").trim().toLowerCase() === un);
                 const isCreator = Boolean(game.createdById && session?.user?.id && game.createdById === session.user.id);
                 const isQueueGame2 = (game as { source?: string }).source === "ranked_queue";
-                const canCancelGame2 = isAdmin || (isCreator && !isQueueGame2);
+                const inAcceptPhase2 = (game.draftState as { phase?: string } | undefined)?.phase === "accept";
+                const canCancelGame2 = isAdmin || (isCreator && !isQueueGame2 && inAcceptPhase2);
                 const canYin = inYang || isAdmin;
                 const canYang = inYin || isAdmin;
                 const registeredNorm2 = new Set((registeredUserNames ?? []).map((n) => String(n).trim().toLowerCase()));

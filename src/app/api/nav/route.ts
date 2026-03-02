@@ -11,6 +11,7 @@ export type OngoingGameNav = {
   source: string;
   teamA: string[];
   teamB: string[];
+  createdAt: string;
 };
 
 /**
@@ -49,9 +50,14 @@ export async function GET() {
         };
       }
       try {
+        const twoHoursAgo = new Date(now.getTime() - 2 * 60 * 60 * 1000);
+        await prisma.teamBuilderGame.updateMany({
+          where: { status: "pending", createdAt: { lt: twoHoursAgo } },
+          data: { status: "cancelled" },
+        });
         const games = await prisma.teamBuilderGame.findMany({
           where: { status: "pending" },
-          select: { id: true, gameType: true, teamA: true, teamB: true, source: true },
+          select: { id: true, gameType: true, teamA: true, teamB: true, source: true, createdAt: true },
           orderBy: { createdAt: "desc" },
           take: 50,
         });
@@ -64,6 +70,7 @@ export async function GET() {
             source: g.source ?? "team_builder",
             teamA: teamA.map((p) => (p.name ?? "").trim() || "—"),
             teamB: teamB.map((p) => (p.name ?? "").trim() || "—"),
+            createdAt: g.createdAt.toISOString(),
           };
         });
         const filtered = games.filter((g) => {
