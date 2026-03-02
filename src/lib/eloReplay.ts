@@ -5,8 +5,8 @@
  */
 
 const BASE_ELO = 1000;
-const K_NORMAL = 32;
-const K_FIRST_GAME = 16;
+const K_NORMAL = 64;
+const K_FIRST_GAME = 64;
 
 function normalizeName(s: string): string {
   return (s ?? "").trim().toLowerCase();
